@@ -21,30 +21,30 @@ A modern React frontend for the BinX file storage API built with Next.js and Typ
 
 ### 1. Clean Installation
 
-\`\`\`bash
+```bash
 # Remove any existing dependencies
 rm -rf node_modules package-lock.json
 
 # Install dependencies
 npm install
-\`\`\`
+```
 
 ### 2. Environment Setup
 
 Create a `.env.local` file in the root directory:
 
-\`\`\`env
+```
 NEXT_PUBLIC_BINX_API_URL=http://localhost:8000
 NEXT_PUBLIC_HOUNDSEC_URL=https://houndsec.net
 NEXT_PUBLIC_GITHUB_URL=https://github.com/your-username/binx
 NEXT_PUBLIC_API_DOCS_URL=http://localhost:8000/docs
-\`\`\`
+```
 
 ### 3. Start the Development Server
 
-\`\`\`bash
+```bash
 npm run dev
-\`\`\`
+```
 
 The app will be available at [http://localhost:3000](http://localhost:3000)
 
