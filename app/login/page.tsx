@@ -2,8 +2,8 @@
 
 import type React from "react"
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -20,6 +20,7 @@ interface FormData {
 
 export default function LoginPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [activeTab, setActiveTab] = useState<UserType>("owner")
   const [formData, setFormData] = useState<FormData>({
     vault: "",
@@ -27,6 +28,14 @@ export default function LoginPage() {
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+
+  // Pre-fill vault name from URL parameter
+  useEffect(() => {
+    const vaultFromUrl = searchParams.get("vault")
+    if (vaultFromUrl) {
+      setFormData((prev) => ({ ...prev, vault: vaultFromUrl }))
+    }
+  }, [searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -50,12 +59,9 @@ export default function LoginPage() {
       const data = await response.json()
 
       if (response.ok) {
-        // Store token and user type
         localStorage.setItem("token", data.access_token)
         localStorage.setItem("userType", activeTab)
         localStorage.setItem("vaultName", formData.vault)
-
-        // Redirect to vault
         router.push("/vault")
       } else {
         setError(data.detail || "Login failed")
@@ -81,13 +87,11 @@ export default function LoginPage() {
       <div className="absolute bottom-20 left-10 w-40 h-40 bg-gradient-to-br from-green-400 to-green-600 rounded-full opacity-20 blur-2xl"></div>
 
       <div className="relative z-10 w-full max-w-md">
-        {/* Back button */}
         <Link href="/" className="inline-flex items-center text-gray-600 hover:text-gray-900 mb-6 transition-colors">
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to home
         </Link>
 
-        {/* Floating card with tabs */}
         <Card className="shadow-2xl border-0 bg-white/80 backdrop-blur-sm">
           <CardHeader className="text-center pb-4">
             <CardTitle className="text-2xl font-bold">Access Your Vault</CardTitle>

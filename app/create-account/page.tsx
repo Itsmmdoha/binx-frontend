@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
-import { ArrowLeft, Loader2 } from "lucide-react"
+import { ArrowLeft, Loader2, AlertCircle, CheckCircle, Copy, Check } from "lucide-react"
+import { validateVaultName, sanitizeVaultName } from "@/utils/validation"
 
 interface FormData {
   vault: string
@@ -25,10 +26,32 @@ export default function CreateAccountPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState(false)
+  const [vaultNameError, setVaultNameError] = useState("")
+  const [copied, setCopied] = useState(false)
+
+  const handleVaultNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    setFormData((prev) => ({ ...prev, vault: value }))
+
+    // Real-time validation
+    if (value.trim()) {
+      const validation = validateVaultName(value)
+      setVaultNameError(validation.isValid ? "" : validation.error || "")
+    } else {
+      setVaultNameError("")
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
+
+    // Validate vault name
+    const vaultValidation = validateVaultName(formData.vault)
+    if (!vaultValidation.isValid) {
+      setVaultNameError(vaultValidation.error || "Invalid vault name")
+      return
+    }
 
     if (formData.password !== formData.confirmPassword) {
       setError("Passwords do not match")
@@ -43,13 +66,15 @@ export default function CreateAccountPage() {
     setLoading(true)
 
     try {
+      const sanitizedVaultName = sanitizeVaultName(formData.vault)
+
       const response = await fetch(`${process.env.NEXT_PUBLIC_BINX_API_URL}/vault/create`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          vault: formData.vault,
+          vault: sanitizedVaultName,
           password: formData.password,
         }),
       })
@@ -58,6 +83,8 @@ export default function CreateAccountPage() {
 
       if (response.ok) {
         setSuccess(true)
+        // Update form data with sanitized name for display
+        setFormData((prev) => ({ ...prev, vault: sanitizedVaultName }))
       } else {
         setError(data.detail || "Failed to create vault")
       }
@@ -75,18 +102,42 @@ export default function CreateAccountPage() {
     }))
   }
 
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (err) {
+      console.error("Failed to copy:", err)
+    }
+  }
+
   if (success) {
+    const guestUrl = `${window.location.origin}/${formData.vault}`
+
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
         <Card className="w-full max-w-md shadow-xl">
           <CardContent className="p-8 text-center">
             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
+              <CheckCircle className="w-8 h-8 text-green-600" />
             </div>
             <h2 className="text-2xl font-bold mb-2">Vault Created!</h2>
-            <p className="text-gray-600 mb-6">Your vault "{formData.vault}" has been created successfully.</p>
+            <p className="text-gray-600 mb-4">Your vault "{formData.vault}" has been created successfully.</p>
+
+            <div className="bg-blue-50 p-4 rounded-md mb-6">
+              <p className="text-sm text-blue-700 mb-2">
+                <strong>Quick Guest Access URL:</strong>
+              </p>
+              <div className="flex items-center space-x-2 bg-white p-2 rounded border">
+                <code className="text-xs flex-1 text-left">{guestUrl}</code>
+                <Button size="sm" variant="ghost" onClick={() => copyToClipboard(guestUrl)} className="h-6 w-6 p-0">
+                  {copied ? <Check className="w-3 h-3 text-green-600" /> : <Copy className="w-3 h-3" />}
+                </Button>
+              </div>
+              <p className="text-xs text-blue-600 mt-2">Share this URL for guest access to your vault</p>
+            </div>
+
             <Link href="/login">
               <Button className="w-full">Go to Login</Button>
             </Link>
@@ -123,12 +174,27 @@ export default function CreateAccountPage() {
                   id="vault"
                   name="vault"
                   type="text"
-                  placeholder="Enter vault name"
+                  placeholder="Enter vault name (e.g., my-vault)"
                   value={formData.vault}
-                  onChange={handleChange}
+                  onChange={handleVaultNameChange}
                   required
-                  className="bg-white/50"
+                  className={`bg-white/50 ${vaultNameError ? "border-red-300 focus:border-red-500" : ""}`}
                 />
+                {vaultNameError && (
+                  <div className="flex items-center space-x-2 text-red-600 text-sm">
+                    <AlertCircle className="w-4 h-4" />
+                    <span>{vaultNameError}</span>
+                  </div>
+                )}
+                {formData.vault && !vaultNameError && (
+                  <div className="flex items-center space-x-2 text-green-600 text-sm">
+                    <CheckCircle className="w-4 h-4" />
+                    <span>Vault name is available</span>
+                  </div>
+                )}
+                <p className="text-xs text-gray-500">
+                  3-30 characters, letters, numbers, hyphens, and underscores only
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -159,9 +225,18 @@ export default function CreateAccountPage() {
                 />
               </div>
 
-              {error && <div className="text-red-600 text-sm bg-red-50 p-3 rounded-md">{error}</div>}
+              {error && (
+                <div className="flex items-center space-x-2 text-red-600 text-sm bg-red-50 p-3 rounded-md">
+                  <AlertCircle className="w-4 h-4" />
+                  <span>{error}</span>
+                </div>
+              )}
 
-              <Button type="submit" className="w-full bg-black hover:bg-gray-800" disabled={loading}>
+              <Button
+                type="submit"
+                className="w-full bg-black hover:bg-gray-800"
+                disabled={loading || !!vaultNameError}
+              >
                 {loading ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />

@@ -32,7 +32,7 @@ import {
   EyeOff,
 } from "lucide-react"
 import { getFileIcon, getFileIconColor } from "@/utils/fileIcons"
-import { formatFileSize, formatDate, formatDateShort } from "@/utils/formatters"
+import { formatFileSize, formatDate, formatDateShort } from "@/utils"
 import type { VaultData, FileData, UserType, VaultResponse } from "@/types"
 
 interface DialogState {
@@ -130,7 +130,6 @@ export default function VaultPage() {
     setUploadProgress(0)
 
     try {
-      // Simulate progress for demo
       const progressInterval = setInterval(() => {
         setUploadProgress((prev) => {
           if (prev >= 90) {
@@ -167,7 +166,6 @@ export default function VaultPage() {
       setUploadProgress(0)
     }
 
-    // Reset file input
     event.target.value = ""
   }
 
@@ -328,7 +326,7 @@ export default function VaultPage() {
             <Card>
               <CardContent className="p-6">
                 <div className="flex items-center justify-center gap-4 sm:gap-8">
-                  {/* Total Files - Circular Display */}
+                  {/* Total Files */}
                   <div className="flex flex-col items-center">
                     <div className="relative w-16 h-16 sm:w-20 sm:h-20 mb-2">
                       <div className="w-full h-full rounded-full bg-blue-100 flex items-center justify-center">
@@ -341,11 +339,10 @@ export default function VaultPage() {
                     </div>
                   </div>
 
-                  {/* Storage Usage - Circular Progress */}
+                  {/* Storage Usage */}
                   <div className="flex flex-col items-center">
                     <div className="relative w-16 h-16 sm:w-20 sm:h-20 mb-2">
                       <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                        {/* Background circle */}
                         <circle
                           cx="50"
                           cy="50"
@@ -355,7 +352,6 @@ export default function VaultPage() {
                           fill="none"
                           className="text-gray-200"
                         />
-                        {/* Progress circle */}
                         <circle
                           cx="50"
                           cy="50"
@@ -388,7 +384,7 @@ export default function VaultPage() {
                     </div>
                   </div>
 
-                  {/* Date Created - Circular Display */}
+                  {/* Date Created */}
                   <div className="flex flex-col items-center">
                     <div className="relative w-16 h-16 sm:w-20 sm:h-20 mb-2">
                       <div className="w-full h-full rounded-full bg-purple-100 flex items-center justify-center">
@@ -578,7 +574,7 @@ export default function VaultPage() {
         </div>
       )}
 
-      {/* Rename Dialog */}
+      {/* Dialogs */}
       <Dialog open={renameDialog.open} onOpenChange={(open) => setRenameDialog({ ...renameDialog, open })}>
         <DialogContent>
           <DialogHeader>
@@ -604,7 +600,6 @@ export default function VaultPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Dialog */}
       <Dialog open={deleteDialog.open} onOpenChange={(open) => setDeleteDialog({ ...deleteDialog, open })}>
         <DialogContent>
           <DialogHeader>
@@ -624,7 +619,6 @@ export default function VaultPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Visibility Dialog */}
       <Dialog open={visibilityDialog.open} onOpenChange={(open) => setVisibilityDialog({ ...visibilityDialog, open })}>
         <DialogContent>
           <DialogHeader>

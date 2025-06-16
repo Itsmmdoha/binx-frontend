@@ -1,30 +1,24 @@
 #!/bin/bash
 
-echo "🧹 Performing complete cleanup..."
-rm -rf node_modules
-rm -f package-lock.json
-rm -f yarn.lock
+echo "🧹 Complete cleanup..."
+rm -rf node_modules package-lock.json yarn.lock
 
 echo "🔧 Clearing npm cache..."
 npm cache clean --force
 
-echo "📦 Installing clean dependencies..."
+echo "📦 Installing with clean dependencies..."
 npm install
 
-echo "✅ Installation complete!"
-echo ""
-echo "🔍 Checking for problematic packages..."
-if npm ls react-day-picker 2>/dev/null | grep -q "react-day-picker"; then
-    echo "❌ react-day-picker still found"
+echo "✅ Checking for problematic packages..."
+if npm ls | grep -E "(react-day-picker|date-fns)" > /dev/null 2>&1; then
+    echo "❌ Still found problematic packages:"
+    npm ls | grep -E "(react-day-picker|date-fns)"
+    echo ""
+    echo "🔧 The packages above are likely from shadcn/ui components."
+    echo "   The app should still work correctly with --legacy-peer-deps"
 else
-    echo "✅ react-day-picker successfully excluded"
-fi
-
-if npm ls date-fns 2>/dev/null | grep -q "date-fns"; then
-    echo "❌ date-fns still found"
-else
-    echo "✅ date-fns successfully excluded"
+    echo "✅ Clean installation - no problematic packages found"
 fi
 
 echo ""
-echo "🚀 Ready to start development server with: npm run dev"
+echo "🚀 Ready to start: npm run dev"
