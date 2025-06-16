@@ -66,7 +66,7 @@ The app will be available at [http://localhost:3000](http://localhost:3000)
 
 ## Project Structure
 
-\`\`\`
+```bash
 binx-frontend/
 ├── app/
 │   ├── create-account/
@@ -88,7 +88,7 @@ binx-frontend/
 ├── .env.local               # Environment variables
 ├── tsconfig.json            # TypeScript configuration
 └── package.json
-\`\`\`
+```
 
 ## Dependency Resolution
 
