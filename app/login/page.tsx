@@ -2,8 +2,8 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useState } from "react"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -20,7 +20,6 @@ interface FormData {
 
 export default function LoginPage() {
   const router = useRouter()
-  const searchParams = useSearchParams()
   const [activeTab, setActiveTab] = useState<UserType>("owner")
   const [formData, setFormData] = useState<FormData>({
     vault: "",
@@ -28,14 +27,6 @@ export default function LoginPage() {
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
-
-  // Pre-fill vault name from URL parameter
-  useEffect(() => {
-    const vaultFromUrl = searchParams.get("vault")
-    if (vaultFromUrl) {
-      setFormData((prev) => ({ ...prev, vault: vaultFromUrl }))
-    }
-  }, [searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

@@ -1,35 +1,31 @@
 # BinX Frontend
 
-A clean, modern React frontend for the BinX file storage API, built with **Next.js** and **TypeScript**.
+Modern React frontend for the BinX file storage API. Built with Next.js, TypeScript, and Tailwind CSS.
 
-## 🚀 Features
+## Features
 
-* 🔐 Secure vault creation with real-time validation
+* 🔐 Secure vault creation with validation
 * 👑 Owner and Guest access modes
-* 📁 Google Drive-like file management interface
-* ⬆️ File uploads with progress tracking
-* 🔗 Direct vault access via URL (`/my-vault`)
-* 📱 Fully responsive, modern UI
-* 🎨 Circular progress indicators for uploads
-* 🛡️ Built-in TypeScript support
+* 📁 File management with upload progress
+* 📱 Responsive design
+* 📦 Static export ready
 
-## ⚡ Quick Start
+## Quick Start
 
 ```bash
-# Recommended: Clean installation script
-chmod +x clean-install.sh
-./clean-install.sh
-
-# Or install dependencies manually
+# Install dependencies
 npm install --legacy-peer-deps
 
-# Start the development server
+# Start development
 npm run dev
+
+# Build for production
+npm run build
 ```
 
-## 🔧 Environment Setup
+## Environment Setup
 
-Create a `.env.local` file in the root directory:
+Create `.env.local`:
 
 ```env
 NEXT_PUBLIC_BINX_API_URL=http://localhost:8000
@@ -38,43 +34,33 @@ NEXT_PUBLIC_GITHUB_URL=https://github.com/your-username/binx
 NEXT_PUBLIC_API_DOCS_URL=http://localhost:8000/docs
 ```
 
-## ✨ Notable Features
+## Static Export
 
-### 🔗 Direct Vault Access
+Export as a static website for CDN deployment:
 
-Access vaults directly via URL:
+```bash
+# Build static files
+npm run build
 
-* Example: `/my-vault` attempts guest login automatically
-* If guest login fails, redirects to login page
-* Ideal for sharing public vaults
-
-### ✅ Vault Name Validation
-
-Real-time vault name checks:
-
-* Length: 3–30 characters
-* Allowed: letters, numbers, hyphens, underscores
-* Disallowed: starting/ending with special characters
-* Protected: reserved names
-
-## 🗂 Project Structure
-
-```
-binx-frontend/
-├── app/
-│   ├── [vaultName]/        # Dynamic vault route (guest access)
-│   ├── create-account/     # Vault creation with validation
-│   ├── login/              # Login page with pre-filled vault names
-│   ├── vault/              # Main file manager interface
-│   ├── layout.tsx          # Root layout
-│   ├── page.tsx            # Landing page
-│   └── globals.css         # Global styles
-├── components/ui/          # Custom UI components
-├── types/                  # TypeScript definitions
-├── utils/                  # Utility functions & validation
-└── .env.local              # Environment variables
+# Static files are generated in the 'out' folder
+# Upload the 'out' folder contents to your hosting provider
 ```
 
-## 📄 License
+### Hosting Options
+
+* **Vercel**: `vercel --prod` (automatic)
+* **Netlify**: Drag & drop `out` folder
+* **GitHub Pages**: Upload `out` contents to `gh-pages` branch
+* **AWS S3**: Upload `out` folder to an S3 bucket
+* **Any web server**: Serve `out` folder as static files
+
+### Important Notes
+
+* All environment variables must be prefixed with `NEXT_PUBLIC_`
+* The app is fully client-side – no server required
+* Configure your hosting to serve `index.html` for 404s (SPA routing)
+
+## License
 
 MIT
+

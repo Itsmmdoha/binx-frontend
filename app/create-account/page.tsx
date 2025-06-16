@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
-import { ArrowLeft, Loader2, AlertCircle, CheckCircle, Copy, Check } from "lucide-react"
+import { ArrowLeft, Loader2, AlertCircle, CheckCircle } from "lucide-react"
 import { validateVaultName, sanitizeVaultName } from "@/utils/validation"
 
 interface FormData {
@@ -27,7 +27,6 @@ export default function CreateAccountPage() {
   const [error, setError] = useState("")
   const [success, setSuccess] = useState(false)
   const [vaultNameError, setVaultNameError] = useState("")
-  const [copied, setCopied] = useState(false)
 
   const handleVaultNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
@@ -102,19 +101,7 @@ export default function CreateAccountPage() {
     }))
   }
 
-  const copyToClipboard = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch (err) {
-      console.error("Failed to copy:", err)
-    }
-  }
-
   if (success) {
-    const guestUrl = `${window.location.origin}/${formData.vault}`
-
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
         <Card className="w-full max-w-md shadow-xl">
@@ -123,21 +110,7 @@ export default function CreateAccountPage() {
               <CheckCircle className="w-8 h-8 text-green-600" />
             </div>
             <h2 className="text-2xl font-bold mb-2">Vault Created!</h2>
-            <p className="text-gray-600 mb-4">Your vault "{formData.vault}" has been created successfully.</p>
-
-            <div className="bg-blue-50 p-4 rounded-md mb-6">
-              <p className="text-sm text-blue-700 mb-2">
-                <strong>Quick Guest Access URL:</strong>
-              </p>
-              <div className="flex items-center space-x-2 bg-white p-2 rounded border">
-                <code className="text-xs flex-1 text-left">{guestUrl}</code>
-                <Button size="sm" variant="ghost" onClick={() => copyToClipboard(guestUrl)} className="h-6 w-6 p-0">
-                  {copied ? <Check className="w-3 h-3 text-green-600" /> : <Copy className="w-3 h-3" />}
-                </Button>
-              </div>
-              <p className="text-xs text-blue-600 mt-2">Share this URL for guest access to your vault</p>
-            </div>
-
+            <p className="text-gray-600 mb-6">Your vault "{formData.vault}" has been created successfully.</p>
             <Link href="/login">
               <Button className="w-full">Go to Login</Button>
             </Link>
