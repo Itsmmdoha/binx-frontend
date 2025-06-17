@@ -33,6 +33,8 @@ import {
   EyeOff,
   X,
   AlertCircle,
+  XCircle,
+  AlertTriangle,
 } from "lucide-react"
 import { getFileIcon, getFileIconColor } from "@/utils/fileIcons"
 import { formatFileSize, formatDate, formatDateShort } from "@/utils"
@@ -53,7 +55,7 @@ interface VisibilityDialogState extends DialogState {
 
 interface FileUploadInfo {
   file: File
-  status: 'pending' | 'uploading' | 'completed' | 'failed'
+  status: 'pending' | 'uploading' | 'completed' | 'failed' | 'cancelled' | 'size-exceeded'
   progress: number
   error?: string
 }
@@ -72,6 +74,7 @@ export default function VaultPage() {
   const [uploadQueue, setUploadQueue] = useState<FileUploadInfo[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [currentUploadIndex, setCurrentUploadIndex] = useState(-1)
+  const [uploadCancelled, setUploadCancelled] = useState(false)
 
   // Legacy single upload states (keeping for backward compatibility)
   const [uploading, setUploading] = useState(false)
@@ -131,6 +134,29 @@ export default function VaultPage() {
     }
   }
 
+  // Check if there's enough storage space for files
+  const checkStorageCapacity = (filesToUpload: File[]): { canUpload: boolean; exceedsStorage: File[] } => {
+    if (!vaultData) return { canUpload: false, exceedsStorage: [] }
+
+    const availableSpace = vaultData.size - vaultData.used_storage
+    let totalSizeNeeded = 0
+    const exceedsStorage: File[] = []
+
+    for (const file of filesToUpload) {
+      totalSizeNeeded += file.size
+      if (totalSizeNeeded > availableSpace) {
+        // Mark this file and all remaining files as exceeding storage
+        exceedsStorage.push(...filesToUpload.slice(filesToUpload.indexOf(file)))
+        break
+      }
+    }
+
+    return {
+      canUpload: exceedsStorage.length === 0,
+      exceedsStorage
+    }
+  }
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = event.target.files
     if (!selectedFiles || selectedFiles.length === 0) return
@@ -138,19 +164,43 @@ export default function VaultPage() {
     const token = localStorage.getItem("token")
     if (!token) return
 
-    // Convert FileList to array and create upload info objects
-    const fileInfos: FileUploadInfo[] = Array.from(selectedFiles).map(file => ({
-      file,
-      status: 'pending',
-      progress: 0
-    }))
+    // Convert FileList to array
+    const fileArray = Array.from(selectedFiles)
+    
+    // Check storage capacity before proceeding
+    const { canUpload, exceedsStorage } = checkStorageCapacity(fileArray)
+
+    // Create upload info objects with pre-validation
+    const fileInfos: FileUploadInfo[] = fileArray.map(file => {
+      const isExceeded = exceedsStorage.includes(file)
+      return {
+        file,
+        status: isExceeded ? 'size-exceeded' : 'pending',
+        progress: 0,
+        error: isExceeded ? `File size exceeds available storage (${formatFileSize(vaultData!.size - vaultData!.used_storage)} remaining)` : undefined
+      }
+    })
 
     setUploadQueue(fileInfos)
     setIsUploading(true)
+    setUploadCancelled(false)
+
+    // If no files can be uploaded, show the panel and auto-dismiss after delay
+    if (!canUpload || fileInfos.every(f => f.status === 'size-exceeded')) {
+      setTimeout(() => {
+        setIsUploading(false)
+        setUploadQueue([])
+        setCurrentUploadIndex(-1)
+      }, 5000)
+      event.target.value = ""
+      return
+    }
+
     setCurrentUploadIndex(0)
 
-    // Start uploading files one by one
-    await uploadFilesSequentially(fileInfos, token)
+    // Start uploading only files that can fit
+    const filesToUpload = fileInfos.filter(f => f.status === 'pending')
+    await uploadFilesSequentially(filesToUpload, token)
 
     // Reset input value
     event.target.value = ""
@@ -158,11 +208,25 @@ export default function VaultPage() {
 
   const uploadFilesSequentially = async (fileInfos: FileUploadInfo[], token: string) => {
     for (let i = 0; i < fileInfos.length; i++) {
-      setCurrentUploadIndex(i)
+      // Check if upload was cancelled
+      if (uploadCancelled) {
+        // Mark remaining files as cancelled
+        setUploadQueue(prev => prev.map((item) => {
+          const fileIndex = prev.findIndex(prevItem => prevItem.file === fileInfos[i].file)
+          return fileIndex >= 0 && prev.findIndex(prevItem => prevItem.file === item.file) >= fileIndex
+            ? { ...item, status: 'cancelled' as const, error: 'Upload cancelled by user' }
+            : item
+        }))
+        break
+      }
+
+      // Update current upload index based on original queue
+      const originalIndex = uploadQueue.findIndex(item => item.file === fileInfos[i].file)
+      setCurrentUploadIndex(originalIndex)
       
       // Update status to uploading
-      setUploadQueue(prev => prev.map((item, index) => 
-        index === i ? { ...item, status: 'uploading', progress: 0 } : item
+      setUploadQueue(prev => prev.map((item) => 
+        item.file === fileInfos[i].file ? { ...item, status: 'uploading' as const, progress: 0 } : item
       ))
 
       try {
@@ -171,8 +235,8 @@ export default function VaultPage() {
 
         // Simulate progress for better UX
         const progressInterval = setInterval(() => {
-          setUploadQueue(prev => prev.map((item, index) => 
-            index === i && item.progress < 90 
+          setUploadQueue(prev => prev.map((item) => 
+            item.file === fileInfos[i].file && item.progress < 90 
               ? { ...item, progress: item.progress + 10 }
               : item
           ))
@@ -190,33 +254,75 @@ export default function VaultPage() {
 
         if (response.ok) {
           // Mark as completed
-          setUploadQueue(prev => prev.map((item, index) => 
-            index === i ? { ...item, status: 'completed', progress: 100 } : item
+          setUploadQueue(prev => prev.map((item) => 
+            item.file === fileInfos[i].file ? { ...item, status: 'completed' as const, progress: 100 } : item
           ))
         } else {
-          const errorData = await response.json().catch(() => ({ message: 'Upload failed' }))
-          setUploadQueue(prev => prev.map((item, index) => 
-            index === i ? { 
+          let errorMessage = 'Upload failed'
+          
+          try {
+            const errorData = await response.json()
+            errorMessage = errorData.message || errorData.detail || 'Upload failed'
+          } catch (parseError) {
+            // If JSON parsing fails, use status-based messages
+            if (response.status === 507) {
+              errorMessage = 'Insufficient storage space'
+            } else if (response.status === 413) {
+              errorMessage = 'File too large'
+            } else if (response.status === 415) {
+              errorMessage = 'File type not supported'
+            } else {
+              errorMessage = `Upload failed (HTTP ${response.status})`
+            }
+          }
+
+          console.log(`Upload failed for ${fileInfos[i].file.name}:`, errorMessage)
+
+          // Mark current file as failed
+          setUploadQueue(prev => prev.map((item) => 
+            item.file === fileInfos[i].file ? { 
               ...item, 
-              status: 'failed', 
+              status: 'failed' as const, 
               progress: 0, 
-              error: errorData.message || 'Upload failed' 
+              error: errorMessage 
             } : item
           ))
+
+          // If it's a 507 error (Insufficient Storage), cancel all remaining uploads
+          if (response.status === 507) {
+            console.log('507 Error detected - cancelling remaining uploads')
+            
+            // Mark all remaining files as cancelled
+            const remainingFiles = fileInfos.slice(i + 1)
+            setUploadQueue(prev => prev.map((item) => {
+              const isRemaining = remainingFiles.some(rf => rf.file === item.file)
+              return isRemaining ? { 
+                ...item, 
+                status: 'cancelled' as const,
+                error: 'Cancelled due to insufficient storage' 
+              } : item
+            }))
+            
+            // Break out of the upload loop
+            break
+          }
         }
       } catch (error) {
-        setUploadQueue(prev => prev.map((item, index) => 
-          index === i ? { 
+        console.error('Network error during upload:', error)
+        setUploadQueue(prev => prev.map((item) => 
+          item.file === fileInfos[i].file ? { 
             ...item, 
-            status: 'failed', 
+            status: 'failed' as const, 
             progress: 0, 
             error: 'Network error occurred' 
           } : item
         ))
       }
 
-      // Small delay between uploads
-      await new Promise(resolve => setTimeout(resolve, 500))
+      // Small delay between uploads (only if not cancelled and not a 507 error)
+      if (!uploadCancelled) {
+        await new Promise(resolve => setTimeout(resolve, 500))
+      }
     }
 
     // Auto-hide upload progress after completion
@@ -224,14 +330,28 @@ export default function VaultPage() {
       setIsUploading(false)
       setUploadQueue([])
       setCurrentUploadIndex(-1)
+      setUploadCancelled(false)
       fetchVaultData(token) // Refresh the file list
-    }, 3000)
+    }, 7000) // Extended timeout to 7 seconds to allow users to see the final status
   }
 
   const cancelUpload = () => {
-    setIsUploading(false)
-    setUploadQueue([])
-    setCurrentUploadIndex(-1)
+    setUploadCancelled(true)
+    
+    // Immediately mark all pending and uploading files as cancelled
+    setUploadQueue(prev => prev.map(item => 
+      (item.status === 'pending' || item.status === 'uploading') 
+        ? { ...item, status: 'cancelled' as const, error: 'Upload cancelled by user' }
+        : item
+    ))
+
+    // Clean up after a short delay
+    setTimeout(() => {
+      setIsUploading(false)
+      setUploadQueue([])
+      setCurrentUploadIndex(-1)
+      setUploadCancelled(false)
+    }, 2000)
   }
 
   const handleDownload = async (fileId: string, fileName: string) => {
@@ -639,8 +759,17 @@ export default function VaultPage() {
                       {fileInfo.status === 'failed' && (
                         <AlertCircle className="w-4 h-4 text-red-600" />
                       )}
+                      {fileInfo.status === 'cancelled' && (
+                        <XCircle className="w-4 h-4 text-gray-500" />
+                      )}
+                      {fileInfo.status === 'size-exceeded' && (
+                        <AlertTriangle className="w-4 h-4 text-orange-600" />
+                      )}
                       {fileInfo.status === 'uploading' && (
                         <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                      )}
+                      {fileInfo.status === 'pending' && (
+                        <div className="w-4 h-4 border-2 border-gray-300 rounded-full"></div>
                       )}
                     </div>
                   </div>
@@ -649,8 +778,8 @@ export default function VaultPage() {
                     <Progress value={fileInfo.progress} className="h-1" />
                   )}
                   
-                  {fileInfo.status === 'failed' && fileInfo.error && (
-                    <p className="text-xs text-red-600">{fileInfo.error}</p>
+                  {(fileInfo.status === 'failed' || fileInfo.status === 'cancelled' || fileInfo.status === 'size-exceeded') && fileInfo.error && (
+                    <p className="text-xs text-red-600 break-words">{fileInfo.error}</p>
                   )}
                 </div>
               )
@@ -660,14 +789,19 @@ export default function VaultPage() {
           <div className="mt-3 pt-3 border-t">
             <div className="flex items-center justify-between text-sm text-gray-600">
               <span>
-                {uploadQueue.filter(f => f.status === 'completed').length} of {uploadQueue.length} completed
+                {uploadQueue.filter(f => f.status === 'completed').length} of {uploadQueue.filter(f => f.status !== 'size-exceeded').length} completed
               </span>
-              {currentUploadIndex >= 0 && currentUploadIndex < uploadQueue.length && (
+              {currentUploadIndex >= 0 && currentUploadIndex < uploadQueue.length && !uploadCancelled && (
                 <span className="text-blue-600">
                   Uploading {currentUploadIndex + 1} of {uploadQueue.length}
                 </span>
               )}
             </div>
+            {uploadQueue.some(f => f.status === 'size-exceeded') && (
+              <div className="text-xs text-orange-600 mt-1">
+                {uploadQueue.filter(f => f.status === 'size-exceeded').length} file(s) exceed storage capacity
+              </div>
+            )}
           </div>
         </div>
       )}
