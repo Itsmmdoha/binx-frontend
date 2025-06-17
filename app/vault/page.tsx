@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
+import { Progress } from "@/components/ui/progress"
 import {
   Upload,
   Download,
@@ -30,6 +31,8 @@ import {
   Check,
   Eye,
   EyeOff,
+  X,
+  AlertCircle,
 } from "lucide-react"
 import { getFileIcon, getFileIconColor } from "@/utils/fileIcons"
 import { formatFileSize, formatDate, formatDateShort } from "@/utils"
@@ -48,6 +51,13 @@ interface VisibilityDialogState extends DialogState {
   visibility: string
 }
 
+interface FileUploadInfo {
+  file: File
+  status: 'pending' | 'uploading' | 'completed' | 'failed'
+  progress: number
+  error?: string
+}
+
 export default function VaultPage() {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -58,7 +68,12 @@ export default function VaultPage() {
   const [userType, setUserType] = useState<UserType>("owner")
   const [vaultName, setVaultName] = useState("")
 
-  // Upload states
+  // Multiple file upload states
+  const [uploadQueue, setUploadQueue] = useState<FileUploadInfo[]>([])
+  const [isUploading, setIsUploading] = useState(false)
+  const [currentUploadIndex, setCurrentUploadIndex] = useState(-1)
+
+  // Legacy single upload states (keeping for backward compatibility)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadComplete, setUploadComplete] = useState(false)
@@ -117,56 +132,106 @@ export default function VaultPage() {
   }
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
+    const selectedFiles = event.target.files
+    if (!selectedFiles || selectedFiles.length === 0) return
 
     const token = localStorage.getItem("token")
     if (!token) return
 
-    const formData = new FormData()
-    formData.append("file", file)
+    // Convert FileList to array and create upload info objects
+    const fileInfos: FileUploadInfo[] = Array.from(selectedFiles).map(file => ({
+      file,
+      status: 'pending',
+      progress: 0
+    }))
 
-    setUploading(true)
-    setUploadProgress(0)
+    setUploadQueue(fileInfos)
+    setIsUploading(true)
+    setCurrentUploadIndex(0)
 
-    try {
-      const progressInterval = setInterval(() => {
-        setUploadProgress((prev) => {
-          if (prev >= 90) {
-            clearInterval(progressInterval)
-            return prev
-          }
-          return prev + 10
+    // Start uploading files one by one
+    await uploadFilesSequentially(fileInfos, token)
+
+    // Reset input value
+    event.target.value = ""
+  }
+
+  const uploadFilesSequentially = async (fileInfos: FileUploadInfo[], token: string) => {
+    for (let i = 0; i < fileInfos.length; i++) {
+      setCurrentUploadIndex(i)
+      
+      // Update status to uploading
+      setUploadQueue(prev => prev.map((item, index) => 
+        index === i ? { ...item, status: 'uploading', progress: 0 } : item
+      ))
+
+      try {
+        const formData = new FormData()
+        formData.append("file", fileInfos[i].file)
+
+        // Simulate progress for better UX
+        const progressInterval = setInterval(() => {
+          setUploadQueue(prev => prev.map((item, index) => 
+            index === i && item.progress < 90 
+              ? { ...item, progress: item.progress + 10 }
+              : item
+          ))
+        }, 200)
+
+        const response = await fetch(`${process.env.NEXT_PUBLIC_BINX_API_URL}/file/upload`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: formData,
         })
-      }, 200)
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BINX_API_URL}/file/upload`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      })
+        clearInterval(progressInterval)
 
-      clearInterval(progressInterval)
-      setUploadProgress(100)
-
-      if (response.ok) {
-        setUploadComplete(true)
-        setTimeout(() => {
-          setUploadComplete(false)
-          setUploading(false)
-          setUploadProgress(0)
-          fetchVaultData(token)
-        }, 1500)
+        if (response.ok) {
+          // Mark as completed
+          setUploadQueue(prev => prev.map((item, index) => 
+            index === i ? { ...item, status: 'completed', progress: 100 } : item
+          ))
+        } else {
+          const errorData = await response.json().catch(() => ({ message: 'Upload failed' }))
+          setUploadQueue(prev => prev.map((item, index) => 
+            index === i ? { 
+              ...item, 
+              status: 'failed', 
+              progress: 0, 
+              error: errorData.message || 'Upload failed' 
+            } : item
+          ))
+        }
+      } catch (error) {
+        setUploadQueue(prev => prev.map((item, index) => 
+          index === i ? { 
+            ...item, 
+            status: 'failed', 
+            progress: 0, 
+            error: 'Network error occurred' 
+          } : item
+        ))
       }
-    } catch (error) {
-      console.error("Upload failed:", error)
-      setUploading(false)
-      setUploadProgress(0)
+
+      // Small delay between uploads
+      await new Promise(resolve => setTimeout(resolve, 500))
     }
 
-    event.target.value = ""
+    // Auto-hide upload progress after completion
+    setTimeout(() => {
+      setIsUploading(false)
+      setUploadQueue([])
+      setCurrentUploadIndex(-1)
+      fetchVaultData(token) // Refresh the file list
+    }, 3000)
+  }
+
+  const cancelUpload = () => {
+    setIsUploading(false)
+    setUploadQueue([])
+    setCurrentUploadIndex(-1)
   }
 
   const handleDownload = async (fileId: string, fileName: string) => {
@@ -308,7 +373,7 @@ export default function VaultPage() {
             {userType === "owner" && (
               <Button onClick={() => fileInputRef.current?.click()} className="bg-black hover:bg-gray-800 flex-1 sm:flex-none">
                 <Upload className="w-4 h-4 mr-2" />
-                <span className="hidden xs:inline sm:inline">Upload File</span>
+                <span className="hidden xs:inline sm:inline">Upload Files</span>
                 <span className="xs:hidden sm:hidden">Upload</span>
               </Button>
             )}
@@ -531,10 +596,83 @@ export default function VaultPage() {
         </Card>
       </div>
 
-      {/* Hidden file input */}
-      <input ref={fileInputRef} type="file" onChange={handleFileUpload} className="hidden" />
+      {/* Hidden file input - Updated to accept multiple files */}
+      <input 
+        ref={fileInputRef} 
+        type="file" 
+        multiple 
+        onChange={handleFileUpload} 
+        className="hidden" 
+      />
 
-      {/* Upload Progress */}
+      {/* Multiple Files Upload Progress */}
+      {isUploading && uploadQueue.length > 0 && (
+        <div className="fixed bottom-6 right-6 bg-white rounded-lg p-4 shadow-lg border max-w-sm w-full">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-medium text-sm">Uploading Files</h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={cancelUpload}
+              className="h-6 w-6 p-0 hover:bg-gray-100"
+            >
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+          
+          <div className="space-y-3 max-h-64 overflow-y-auto">
+            {uploadQueue.map((fileInfo, index) => {
+              const FileIcon = getFileIcon(fileInfo.file.name)
+              const iconColor = getFileIconColor(fileInfo.file.name)
+              
+              return (
+                <div key={index} className="space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <FileIcon className={`w-4 h-4 ${iconColor} flex-shrink-0`} />
+                    <span className="text-sm truncate flex-1" title={fileInfo.file.name}>
+                      {fileInfo.file.name}
+                    </span>
+                    <div className="flex-shrink-0">
+                      {fileInfo.status === 'completed' && (
+                        <Check className="w-4 h-4 text-green-600" />
+                      )}
+                      {fileInfo.status === 'failed' && (
+                        <AlertCircle className="w-4 h-4 text-red-600" />
+                      )}
+                      {fileInfo.status === 'uploading' && (
+                        <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {fileInfo.status === 'uploading' && (
+                    <Progress value={fileInfo.progress} className="h-1" />
+                  )}
+                  
+                  {fileInfo.status === 'failed' && fileInfo.error && (
+                    <p className="text-xs text-red-600">{fileInfo.error}</p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          
+          <div className="mt-3 pt-3 border-t">
+            <div className="flex items-center justify-between text-sm text-gray-600">
+              <span>
+                {uploadQueue.filter(f => f.status === 'completed').length} of {uploadQueue.length} completed
+              </span>
+              {currentUploadIndex >= 0 && currentUploadIndex < uploadQueue.length && (
+                <span className="text-blue-600">
+                  Uploading {currentUploadIndex + 1} of {uploadQueue.length}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Legacy Upload Progress (keeping for backward compatibility) */}
       {uploading && (
         <div className="fixed bottom-6 right-6 bg-white rounded-full p-4 shadow-lg border">
           <div className="w-16 h-16 relative">
