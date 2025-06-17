@@ -282,14 +282,14 @@ export default function VaultPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center justify-between">
+      <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">
           <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2">
-              <FolderOpen className="w-6 h-6 text-gray-600" />
-              <h1 className="text-xl font-semibold">{vaultName}</h1>
+            <div className="flex items-center space-x-2 min-w-0">
+              <FolderOpen className="w-6 h-6 text-gray-600 flex-shrink-0" />
+              <h1 className="text-xl font-semibold truncate">{vaultName}</h1>
             </div>
-            <div className="flex items-center space-x-1 px-2 py-1 bg-gray-100 rounded-full text-sm">
+            <div className="flex items-center space-x-1 px-2 py-1 bg-gray-100 rounded-full text-sm flex-shrink-0">
               {userType === "owner" ? (
                 <>
                   <Crown className="w-4 h-4 text-yellow-600" />
@@ -304,16 +304,17 @@ export default function VaultPage() {
             </div>
           </div>
 
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2 sm:space-x-4">
             {userType === "owner" && (
-              <Button onClick={() => fileInputRef.current?.click()} className="bg-black hover:bg-gray-800">
+              <Button onClick={() => fileInputRef.current?.click()} className="bg-black hover:bg-gray-800 flex-1 sm:flex-none">
                 <Upload className="w-4 h-4 mr-2" />
-                Upload File
+                <span className="hidden xs:inline sm:inline">Upload File</span>
+                <span className="xs:hidden sm:hidden">Upload</span>
               </Button>
             )}
-            <Button variant="outline" onClick={handleLogout}>
+            <Button variant="outline" onClick={handleLogout} className="flex-shrink-0">
               <LogOut className="w-4 h-4 mr-2" />
-              Logout
+              <span className="hidden sm:inline">Logout</span>
             </Button>
           </div>
         </div>
@@ -436,8 +437,8 @@ export default function VaultPage() {
                           <FileIcon className={`w-8 h-8 ${iconColor}`} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-gray-900 text-lg truncate sm:text-clip">{file.file}</p>
-                          <div className="flex items-center space-x-6 text-sm text-gray-500 mt-1">
+                          <p className="font-medium text-gray-900 text-lg truncate">{file.file}</p>
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-6 text-sm text-gray-500 mt-1 space-y-1 sm:space-y-0">
                             <span className="font-medium">{formatFileSize(file.size)}</span>
                             <span className="hidden sm:inline">{formatDate(file.date_created)}</span>
                             <div className="flex items-center space-x-1">
