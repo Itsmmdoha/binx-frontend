@@ -123,8 +123,8 @@ export default function CreateAccountPage() {
     }
 
     try {
-      // Sanitize vault name
-      const sanitizedVaultName = formData.vault.toLowerCase().replace(/[^a-z0-9-]/g, "-")
+      // Only lowercase the vault name, don't replace underscores
+      const sanitizedVaultName = formData.vault.trim().toLowerCase()
 
       const response = await fetch(`${process.env.NEXT_PUBLIC_BINX_API_URL}/vault/create`, {
         method: "POST",
