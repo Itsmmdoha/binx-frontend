@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Label } from "@/components/ui/label"
-import { ArrowLeft, Loader2, Crown, Users } from "lucide-react"
+import { ArrowLeft, Loader2, Crown, Users, AlertCircle } from "lucide-react"
 import type { UserType } from "@/types"
 
 interface FormData {
@@ -62,7 +62,7 @@ export default function LoginPage() {
       const token = localStorage.getItem("token")
       const userType = localStorage.getItem("userType")
       const vaultName = localStorage.getItem("vaultName")
-      
+
       if (token && userType && vaultName) {
         const isTokenValid = await verifyToken(token)
         if (isTokenValid) {
@@ -81,7 +81,7 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const requestBody: any = { vault: formData.vault }
+      const requestBody: any = { vault: formData.vault.trim().toLowerCase() }
       if (activeTab === "owner") {
         requestBody.password = formData.password
       }
@@ -99,7 +99,7 @@ export default function LoginPage() {
       if (response.ok) {
         localStorage.setItem("token", data.access_token)
         localStorage.setItem("userType", activeTab)
-        localStorage.setItem("vaultName", formData.vault)
+        localStorage.setItem("vaultName", formData.vault.trim().toLowerCase())
         router.push("/vault")
       } else {
         // Handle 401 and other errors
@@ -124,13 +124,21 @@ export default function LoginPage() {
     }))
   }
 
+  const handleTabChange = (value: string) => {
+    setActiveTab(value as UserType)
+    setError("") // Clear error when switching tabs
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900 flex items-center justify-center p-4 relative overflow-hidden">
       {/* Decorative blobs */}
       <div className="absolute top-20 right-10 w-32 h-32 bg-gradient-to-br from-purple-400 to-blue-600 rounded-full opacity-20 blur-xl"></div>
       <div className="absolute bottom-20 left-10 w-40 h-40 bg-gradient-to-br from-green-400 to-green-600 rounded-full opacity-20 blur-2xl"></div>
       <div className="relative z-10 w-full max-w-md">
-        <Link href="/" className="inline-flex items-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 mb-6 transition-colors">
+        <Link
+          href="/"
+          className="inline-flex items-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 mb-6 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500 rounded-md p-1"
+        >
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to home
         </Link>
@@ -138,24 +146,36 @@ export default function LoginPage() {
         <Card className="shadow-2xl border-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm">
           <CardHeader className="text-center pb-4">
             <CardTitle className="text-2xl font-bold text-gray-900 dark:text-gray-100">Access Your Vault</CardTitle>
-            <CardDescription className="text-gray-600 dark:text-gray-400">Sign in as owner or guest to access your files</CardDescription>
+            <CardDescription className="text-gray-600 dark:text-gray-400">
+              Sign in as owner or guest to access your files
+            </CardDescription>
           </CardHeader>
           <CardContent className="p-6">
-            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as UserType)}>
-              <TabsList className="grid w-full grid-cols-2 mb-6 bg-gray-100 dark:bg-gray-700">
-                <TabsTrigger value="owner" className="flex items-center gap-2 data-[state=active]:bg-white dark:data-[state=active]:bg-gray-600 data-[state=active]:text-gray-900 dark:data-[state=active]:text-gray-100">
+            <Tabs value={activeTab} onValueChange={handleTabChange}>
+              <TabsList className="grid w-full grid-cols-2 mb-6 bg-gray-100 dark:bg-gray-700" role="tablist">
+                <TabsTrigger
+                  value="owner"
+                  className="flex items-center gap-2 data-[state=active]:bg-white dark:data-[state=active]:bg-gray-600 data-[state=active]:text-gray-900 dark:data-[state=active]:text-gray-100"
+                  aria-label="Sign in as vault owner"
+                >
                   <Crown className="w-4 h-4" />
                   Owner
                 </TabsTrigger>
-                <TabsTrigger value="guest" className="flex items-center gap-2 data-[state=active]:bg-white dark:data-[state=active]:bg-gray-600 data-[state=active]:text-gray-900 dark:data-[state=active]:text-gray-100">
+                <TabsTrigger
+                  value="guest"
+                  className="flex items-center gap-2 data-[state=active]:bg-white dark:data-[state=active]:bg-gray-600 data-[state=active]:text-gray-900 dark:data-[state=active]:text-gray-100"
+                  aria-label="Sign in as guest user"
+                >
                   <Users className="w-4 h-4" />
                   Guest
                 </TabsTrigger>
               </TabsList>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit} className="space-y-4" noValidate>
                 <div className="space-y-2">
-                  <Label htmlFor="vault" className="text-gray-900 dark:text-gray-100">Vault Name</Label>
+                  <Label htmlFor="vault" className="text-gray-900 dark:text-gray-100">
+                    Vault Name
+                  </Label>
                   <Input
                     id="vault"
                     name="vault"
@@ -164,13 +184,26 @@ export default function LoginPage() {
                     value={formData.vault}
                     onChange={handleChange}
                     required
-                    className="bg-white/50 dark:bg-gray-700/50 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-400"
+                    autoComplete="username"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck="false"
+                    inputMode="text"
+                    aria-describedby="vault-description"
+                    aria-invalid={error ? "true" : "false"}
+                    disabled={loading}
+                    className="bg-white/50 dark:bg-gray-700/50 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
                   />
+                  <p id="vault-description" className="text-xs text-gray-500 dark:text-gray-500">
+                    Enter the name of your vault
+                  </p>
                 </div>
 
-                <TabsContent value="owner">
+                <TabsContent value="owner" className="space-y-4 mt-4">
                   <div className="space-y-2">
-                    <Label htmlFor="password" className="text-gray-900 dark:text-gray-100">Password</Label>
+                    <Label htmlFor="password" className="text-gray-900 dark:text-gray-100">
+                      Password
+                    </Label>
                     <Input
                       id="password"
                       name="password"
@@ -179,30 +212,61 @@ export default function LoginPage() {
                       value={formData.password}
                       onChange={handleChange}
                       required={activeTab === "owner"}
-                      className="bg-white/50 dark:bg-gray-700/50 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-400"
+                      autoComplete="current-password"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck="false"
+                      aria-describedby="password-description"
+                      aria-invalid={error ? "true" : "false"}
+                      disabled={loading}
+                      className="bg-white/50 dark:bg-gray-700/50 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
                     />
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="guest">
-                  <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-md border border-blue-200 dark:border-blue-800">
-                    <p className="text-sm text-blue-700 dark:text-blue-300">
-                      <strong>Guest mode:</strong> You can only view and download public files.
+                    <p id="password-description" className="text-xs text-gray-500 dark:text-gray-500">
+                      Enter your vault password
                     </p>
                   </div>
                 </TabsContent>
 
+                <TabsContent value="guest" className="mt-4">
+                  <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <div className="flex items-start space-x-3">
+                      <div className="flex-shrink-0">
+                        <Users className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-1">Guest Access</h4>
+                        <p className="text-sm text-blue-700 dark:text-blue-300">
+                          You can view and download public files without a password.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </TabsContent>
+
                 {error && (
-                  <div className="text-red-600 dark:text-red-400 text-sm bg-red-50 dark:bg-red-900/20 p-3 rounded-md border border-red-200 dark:border-red-800">
-                    {error}
+                  <div
+                    className="flex items-start space-x-3 text-red-600 dark:text-red-400 text-sm bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border border-red-200 dark:border-red-800"
+                    role="alert"
+                    aria-live="polite"
+                  >
+                    <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="font-medium mb-1">Sign In Failed</h4>
+                      <p>{error}</p>
+                    </div>
                   </div>
                 )}
 
-                <Button type="submit" className="w-full bg-gray-900 dark:bg-gray-100 hover:bg-gray-800 dark:hover:bg-gray-200 text-white dark:text-gray-900" disabled={loading}>
+                <Button
+                  type="submit"
+                  className="w-full bg-gray-900 dark:bg-gray-100 hover:bg-gray-800 dark:hover:bg-gray-200 text-white dark:text-gray-900 focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={loading || !formData.vault.trim() || (activeTab === "owner" && !formData.password)}
+                  aria-describedby={loading ? "loading-description" : undefined}
+                >
                   {loading ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Signing in...
+                      <span id="loading-description">Signing in...</span>
                     </>
                   ) : (
                     `Sign in as ${activeTab}`
@@ -214,7 +278,10 @@ export default function LoginPage() {
             <div className="mt-6 text-center">
               <p className="text-sm text-gray-600 dark:text-gray-400">
                 Don't have a vault?{" "}
-                <Link href="/create-account" className="text-gray-900 dark:text-gray-100 hover:underline font-medium">
+                <Link
+                  href="/create-account"
+                  className="text-gray-900 dark:text-gray-100 hover:underline font-medium focus:outline-none focus:ring-2 focus:ring-gray-500 rounded-sm"
+                >
                   Create one
                 </Link>
               </p>
