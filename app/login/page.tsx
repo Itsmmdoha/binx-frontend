@@ -75,6 +75,50 @@ export default function LoginPage() {
     checkAuthStatus()
   }, [router])
 
+  // Add this useEffect after the existing useEffect
+  useEffect(() => {
+    // Handle Firefox autofill detection
+    const handleAutofill = () => {
+      const vaultInput = document.getElementById("vault") as HTMLInputElement
+      const passwordInput = document.getElementById("password") as HTMLInputElement
+
+      if (vaultInput?.value && vaultInput.value !== formData.vault) {
+        setFormData((prev) => ({ ...prev, vault: vaultInput.value }))
+      }
+      if (passwordInput?.value && passwordInput.value !== formData.password) {
+        setFormData((prev) => ({ ...prev, password: passwordInput.value }))
+      }
+    }
+
+    // Check for autofilled values periodically (Firefox workaround)
+    const interval = setInterval(handleAutofill, 100)
+
+    // Also check on focus events
+    const inputs = document.querySelectorAll('input[type="text"], input[type="password"]')
+    inputs.forEach((input) => {
+      input.addEventListener("focus", handleAutofill)
+      input.addEventListener("blur", handleAutofill)
+    })
+
+    // Cleanup
+    return () => {
+      clearInterval(interval)
+      inputs.forEach((input) => {
+        input.removeEventListener("focus", handleAutofill)
+        input.removeEventListener("blur", handleAutofill)
+      })
+    }
+  }, [formData.vault, formData.password])
+
+  // Update the handleChange function to also handle onInput events
+  const handleInput = (e: React.FormEvent<HTMLInputElement>) => {
+    const target = e.target as HTMLInputElement
+    setFormData((prev) => ({
+      ...prev,
+      [target.name]: target.value,
+    }))
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
@@ -183,6 +227,7 @@ export default function LoginPage() {
                     placeholder="Enter vault name"
                     value={formData.vault}
                     onChange={handleChange}
+                    onInput={handleInput}
                     required
                     autoComplete="username"
                     autoCapitalize="none"
@@ -211,6 +256,7 @@ export default function LoginPage() {
                       placeholder="Enter vault password"
                       value={formData.password}
                       onChange={handleChange}
+                      onInput={handleInput}
                       required={activeTab === "owner"}
                       autoComplete="current-password"
                       autoCapitalize="none"

@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -195,6 +195,71 @@ export default function CreateAccountPage() {
 
   const isFormValid = validation.vault.isValid && validation.password.isValid && validation.confirmPassword.isValid
 
+  // Add this useEffect after the existing useState declarations
+  useEffect(() => {
+    // Handle Firefox autofill detection
+    const handleAutofill = () => {
+      const vaultInput = document.getElementById("vault") as HTMLInputElement
+      const passwordInput = document.getElementById("password") as HTMLInputElement
+      const confirmPasswordInput = document.getElementById("confirmPassword") as HTMLInputElement
+
+      if (vaultInput?.value && vaultInput.value !== formData.vault) {
+        const newValue = vaultInput.value
+        setFormData((prev) => ({ ...prev, vault: newValue }))
+
+        // Trigger validation
+        const vaultValidation = validateVaultName(newValue)
+        setValidation((prev) => ({ ...prev, vault: vaultValidation }))
+        setShowValidation((prev) => ({ ...prev, vault: newValue.length > 0 }))
+      }
+
+      if (passwordInput?.value && passwordInput.value !== formData.password) {
+        const newValue = passwordInput.value
+        setFormData((prev) => ({ ...prev, password: newValue }))
+
+        // Trigger validation
+        const passwordValidation = validatePassword(newValue)
+        setValidation((prev) => ({ ...prev, password: passwordValidation }))
+        setShowValidation((prev) => ({ ...prev, password: newValue.length > 0 }))
+      }
+
+      if (confirmPasswordInput?.value && confirmPasswordInput.value !== formData.confirmPassword) {
+        const newValue = confirmPasswordInput.value
+        setFormData((prev) => ({ ...prev, confirmPassword: newValue }))
+
+        // Trigger validation
+        const confirmPasswordValidation = validateConfirmPassword(newValue, formData.password)
+        setValidation((prev) => ({ ...prev, confirmPassword: confirmPasswordValidation }))
+        setShowValidation((prev) => ({ ...prev, confirmPassword: newValue.length > 0 }))
+      }
+    }
+
+    // Check for autofilled values periodically (Firefox workaround)
+    const interval = setInterval(handleAutofill, 100)
+
+    // Also check on focus events
+    const inputs = document.querySelectorAll('input[type="text"], input[type="password"]')
+    inputs.forEach((input) => {
+      input.addEventListener("focus", handleAutofill)
+      input.addEventListener("blur", handleAutofill)
+    })
+
+    // Cleanup
+    return () => {
+      clearInterval(interval)
+      inputs.forEach((input) => {
+        input.removeEventListener("focus", handleAutofill)
+        input.removeEventListener("blur", handleAutofill)
+      })
+    }
+  }, [formData.vault, formData.password, formData.confirmPassword])
+
+  // Add handleInput function
+  const handleInput = (e: React.FormEvent<HTMLInputElement>) => {
+    const target = e.target as HTMLInputElement
+    handleChange({ target } as React.ChangeEvent<HTMLInputElement>)
+  }
+
   if (success) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900 flex items-center justify-center p-4">
@@ -255,6 +320,7 @@ export default function CreateAccountPage() {
                   placeholder="Enter vault name (e.g., my-vault)"
                   value={formData.vault}
                   onChange={handleChange}
+                  onInput={handleInput}
                   required
                   autoComplete="username"
                   autoCapitalize="none"
@@ -299,6 +365,7 @@ export default function CreateAccountPage() {
                   placeholder="Enter a strong password"
                   value={formData.password}
                   onChange={handleChange}
+                  onInput={handleInput}
                   required
                   autoComplete="new-password"
                   autoCapitalize="none"
@@ -370,6 +437,7 @@ export default function CreateAccountPage() {
                   placeholder="Confirm your password"
                   value={formData.confirmPassword}
                   onChange={handleChange}
+                  onInput={handleInput}
                   required
                   autoComplete="new-password"
                   autoCapitalize="none"
