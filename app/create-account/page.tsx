@@ -87,13 +87,8 @@ export default function CreateAccountPage() {
 
     strength = Object.values(checks).filter(Boolean).length
 
-    if (password.length < 8) {
-      return { isValid: false, message: "Password must be at least 8 characters", strength }
-    }
-    if (strength < 3) {
-      return { isValid: false, message: "Password should include uppercase, lowercase, numbers, or symbols", strength }
-    }
-    return { isValid: true, message: "Strong password!", strength }
+    // Always return valid, but show strength feedback
+    return { isValid: true, message: "Password accepted", strength }
   }
 
   const validateConfirmPassword = (confirmPassword: string, password: string) => {
@@ -317,7 +312,7 @@ export default function CreateAccountPage() {
                   id="vault"
                   name="vault"
                   type="text"
-                  placeholder="Enter vault name (e.g., my-vault)"
+                  placeholder="Enter vault name (e.g., my_vault)"
                   value={formData.vault}
                   onChange={handleChange}
                   onInput={handleInput}
@@ -339,7 +334,7 @@ export default function CreateAccountPage() {
                   }`}
                 />
                 <p id="vault-description" className="text-xs text-gray-500 dark:text-gray-500">
-                  Only lowercase letters, numbers, and hyphens allowed
+                  Letters, numbers, hyphens, and underscores allowed
                 </p>
                 {showValidation.vault && (
                   <div
@@ -362,7 +357,7 @@ export default function CreateAccountPage() {
                   id="password"
                   name="password"
                   type="password"
-                  placeholder="Enter a strong password"
+                  placeholder="Enter your password"
                   value={formData.password}
                   onChange={handleChange}
                   onInput={handleInput}
@@ -383,20 +378,16 @@ export default function CreateAccountPage() {
                   }`}
                 />
                 <p id="password-description" className="text-xs text-gray-500 dark:text-gray-500">
-                  At least 8 characters with a mix of letters, numbers, and symbols
+                  Choose any password you prefer
                 </p>
-                {showValidation.password && (
+                {showValidation.password && formData.password && (
                   <>
                     <div
                       id="password-validation"
-                      className={`flex items-center space-x-2 text-xs ${
-                        validation.password.isValid
-                          ? "text-green-600 dark:text-green-400"
-                          : "text-red-600 dark:text-red-400"
-                      }`}
+                      className="flex items-center space-x-2 text-xs text-green-600 dark:text-green-400"
                     >
-                      {validation.password.isValid ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
-                      <span>{validation.password.message}</span>
+                      <Check className="w-4 h-4" />
+                      <span>Password accepted</span>
                     </div>
                     <div id="password-strength" className="space-y-1">
                       <div className="flex justify-between text-xs">
