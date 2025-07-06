@@ -2,7 +2,8 @@
 
 A Next.js frontend for [binx](https://github.com/itsmmdoha/binx), built with TypeScript and Tailwind CSS. 
 
-![image](https://github.com/user-attachments/assets/15e9ac87-4d2d-4636-979c-e995443c6904)
+![image](https://github.com/user-attachments/assets/4c0535a8-6abb-4f27-9abe-8ef136c08e2e)
+
 
 
 ## Prerequisites
