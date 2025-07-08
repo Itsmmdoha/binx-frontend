@@ -4,6 +4,7 @@ import type React from "react"
 
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { VaultSettings } from "./vault-settings"
 import { FolderOpen, Upload, LogOut, Crown, Users, CheckSquare, X } from "lucide-react"
 import type { UserType } from "@/types"
 
@@ -17,6 +18,8 @@ interface VaultHeaderProps {
   onClearSelection: () => void
   onBulkDelete: () => void
   onLogout: () => void
+  onVaultRenamed?: (newName: string) => void
+  onVaultDeleted?: () => void
 }
 
 export function VaultHeader({
@@ -29,6 +32,8 @@ export function VaultHeader({
   onClearSelection,
   onBulkDelete,
   onLogout,
+  onVaultRenamed,
+  onVaultDeleted,
 }: VaultHeaderProps) {
   return (
     <>
@@ -38,6 +43,9 @@ export function VaultHeader({
             <div className="flex items-center space-x-2 min-w-0">
               <FolderOpen className="w-6 h-6 text-gray-600 dark:text-gray-400 flex-shrink-0" />
               <h1 className="text-xl font-semibold truncate text-gray-900 dark:text-gray-100">{vaultName}</h1>
+              {userType === "owner" && onVaultRenamed && onVaultDeleted && (
+                <VaultSettings vaultName={vaultName} onVaultRenamed={onVaultRenamed} onVaultDeleted={onVaultDeleted} />
+              )}
             </div>
             <div className="flex items-center space-x-1 px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded-full text-sm flex-shrink-0">
               {userType === "owner" ? (

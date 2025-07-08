@@ -93,6 +93,14 @@ export default function VaultPage() {
     )
   }
 
+  const handleVaultRenamed = (newName: string) => {
+    setVaultName(newName)
+  }
+
+  const handleVaultDeleted = () => {
+    router.push("/")
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center">
@@ -116,6 +124,8 @@ export default function VaultPage() {
         onClearSelection={clearSelection}
         onBulkDelete={handleBulkDeleteAction}
         onLogout={handleLogout}
+        onVaultRenamed={handleVaultRenamed}
+        onVaultDeleted={handleVaultDeleted}
       />
 
       <div className="p-6">
