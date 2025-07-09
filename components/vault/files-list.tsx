@@ -233,14 +233,14 @@ export function FilesList({
 
               return (
                 <div
-                  key={file.file_id}
+                  key={file.id}
                   className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                 >
                   <div className="flex items-center space-x-4 flex-1 min-w-0">
                     {isSelectionMode && userType === "owner" && (
                       <Checkbox
-                        checked={selectedFiles.has(file.file_id)}
-                        onCheckedChange={() => onFileSelect(file.file_id)}
+                        checked={selectedFiles.has(file.id)}
+                        onCheckedChange={() => onFileSelect(file.id)}
                         className="flex-shrink-0"
                       />
                     )}
@@ -273,7 +273,7 @@ export function FilesList({
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => onDownload(file.file_id, file.file)}
+                      onClick={() => onDownload(file.id, file.file)}
                       className="hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:text-blue-600 dark:hover:text-blue-400"
                     >
                       <Download className="w-4 h-4" />

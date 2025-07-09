@@ -73,7 +73,7 @@ export function useFileOperations(fetchVaultData: (token: string) => void, clear
     if (!token || !renameDialog.file) return
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BINX_API_URL}/file/${renameDialog.file.file_id}`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BINX_API_URL}/file/${renameDialog.file.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -98,7 +98,7 @@ export function useFileOperations(fetchVaultData: (token: string) => void, clear
     if (!token || !deleteDialog.file) return
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BINX_API_URL}/file/${deleteDialog.file.file_id}`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BINX_API_URL}/file/${deleteDialog.file.id}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -156,7 +156,7 @@ export function useFileOperations(fetchVaultData: (token: string) => void, clear
     if (!token || !visibilityDialog.file) return
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BINX_API_URL}/file/${visibilityDialog.file.file_id}`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BINX_API_URL}/file/${visibilityDialog.file.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -184,7 +184,7 @@ export function useFileOperations(fetchVaultData: (token: string) => void, clear
 
       try {
         // First, make the file public
-        const response = await fetch(`${process.env.NEXT_PUBLIC_BINX_API_URL}/file/${file.file_id}`, {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_BINX_API_URL}/file/${file.id}`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
@@ -195,7 +195,7 @@ export function useFileOperations(fetchVaultData: (token: string) => void, clear
 
         if (response.ok) {
           // Generate the public link
-          const publicLink = `${process.env.NEXT_PUBLIC_BINX_API_URL}/${vaultName}/file/${file.file_id}`
+          const publicLink = `${process.env.NEXT_PUBLIC_BINX_API_URL}/${vaultName}/file/${file.id}`
 
           // Copy to clipboard
           try {

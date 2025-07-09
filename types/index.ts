@@ -1,5 +1,5 @@
 export interface VaultData {
-  vault_id: string
+  vault_id?: string
   vault: string
   size: number
   used_storage: number
@@ -7,7 +7,7 @@ export interface VaultData {
 }
 
 export interface FileData {
-  file_id: string
+  id: string
   file: string
   size: number
   visibility: "public" | "private"
