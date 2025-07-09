@@ -188,21 +188,36 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
           )
         }
 
-        if (!uploadCancelled) {
-          await new Promise((resolve) => setTimeout(resolve, 500))
+        // Reduced delay between uploads from 500ms to 100ms
+        if (!uploadCancelled && i < fileInfos.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 100))
         }
       }
 
-      setTimeout(() => {
-        setIsUploading(false)
-        setUploadQueue([])
-        setCurrentUploadIndex(-1)
-        setUploadCancelled(false)
-        setShowDetailedProgress(false)
+      // Check if all uploads are complete
+      const allComplete = uploadQueue.every(
+        (file) =>
+          file.status === "completed" ||
+          file.status === "failed" ||
+          file.status === "cancelled" ||
+          file.status === "size-exceeded",
+      )
+
+      if (allComplete) {
+        // Refresh vault data immediately when uploads complete
         fetchVaultData(localStorage.getItem("token") || "")
-      }, 5000)
+
+        // Show completion state briefly, then cleanup
+        setTimeout(() => {
+          setIsUploading(false)
+          setUploadQueue([])
+          setCurrentUploadIndex(-1)
+          setUploadCancelled(false)
+          setShowDetailedProgress(false)
+        }, 1500) // Reduced from 5000ms to 1500ms
+      }
     },
-    [uploadCancelled, uploadFileWithProgress, fetchVaultData],
+    [uploadCancelled, uploadFileWithProgress, fetchVaultData, uploadQueue],
   )
 
   const handleFileUpload = useCallback(
@@ -238,7 +253,7 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
           setIsUploading(false)
           setUploadQueue([])
           setCurrentUploadIndex(-1)
-        }, 5000)
+        }, 3000) // Reduced from 5000ms to 3000ms for size exceeded cases
         event.target.value = ""
         return
       }
@@ -271,7 +286,7 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
       setCurrentUploadIndex(-1)
       setUploadCancelled(false)
       setShowDetailedProgress(false)
-    }, 2000)
+    }, 1000) // Reduced from 2000ms to 1000ms
   }, [])
 
   const getCurrentUploadingFile = useCallback(() => {

@@ -45,13 +45,27 @@ export function UploadProgress({
     return null
   }
 
+  // Check if all uploads are complete
+  const allUploadsComplete = uploadQueue.every(
+    (file) =>
+      file.status === "completed" ||
+      file.status === "failed" ||
+      file.status === "cancelled" ||
+      file.status === "size-exceeded",
+  )
+
+  // Check if there are any successful uploads
+  const hasCompletedUploads = uploadQueue.some((file) => file.status === "completed")
+
   return (
     <div className="fixed bottom-4 right-4 left-4 sm:left-auto sm:right-6 sm:w-80 bg-white dark:bg-gray-800 rounded-lg p-4 shadow-lg border dark:border-gray-700 z-50 animate-in slide-in-from-bottom-4 duration-300">
       {!showDetailedProgress ? (
-        // Simple View - Current uploading file only
+        // Simple View - Current uploading file or completion status
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="font-medium text-sm text-gray-900 dark:text-gray-100">Uploading Files</h3>
+            <h3 className="font-medium text-sm text-gray-900 dark:text-gray-100">
+              {allUploadsComplete ? "Upload Complete" : "Uploading Files"}
+            </h3>
             <div className="flex items-center space-x-2">
               <Button
                 variant="ghost"
@@ -72,7 +86,7 @@ export function UploadProgress({
             </div>
           </div>
 
-          {/* Current uploading file */}
+          {/* Current uploading file or completion status */}
           {currentUploadingFile ? (
             <div className="space-y-2">
               <div className="flex items-center space-x-2">
@@ -91,10 +105,24 @@ export function UploadProgress({
               </div>
               <Progress value={currentUploadingFile.progress} className="h-2 transition-all duration-150" />
             </div>
+          ) : allUploadsComplete && hasCompletedUploads ? (
+            // Show completion status
+            <div className="text-center py-2">
+              <div className="w-6 h-6 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center mx-auto mb-2">
+                <Check className="w-4 h-4 text-green-600 dark:text-green-400" />
+              </div>
+              <p className="text-sm text-gray-900 dark:text-gray-100">
+                {uploadSummary.completed} file{uploadSummary.completed !== 1 ? "s" : ""} uploaded successfully
+              </p>
+              {uploadSummary.failed > 0 && (
+                <p className="text-xs text-red-600 dark:text-red-400 mt-1">{uploadSummary.failed} failed</p>
+              )}
+            </div>
           ) : (
+            // Show processing state only when there are pending uploads
             <div className="text-center py-2">
               <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Processing...</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">Preparing upload...</p>
             </div>
           )}
 
@@ -110,7 +138,9 @@ export function UploadProgress({
         // Detailed View - All files with scrolling
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="font-medium text-sm text-gray-900 dark:text-gray-100">Upload Progress</h3>
+            <h3 className="font-medium text-sm text-gray-900 dark:text-gray-100">
+              {allUploadsComplete ? "Upload Complete" : "Upload Progress"}
+            </h3>
             <div className="flex items-center space-x-2">
               <Button
                 variant="ghost"
