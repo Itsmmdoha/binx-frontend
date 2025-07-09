@@ -86,7 +86,7 @@ export default function VaultPage() {
   }
 
   const handleBulkDeleteAction = () => {
-    const selectedFileData = filteredAndSortedFiles.filter((file) => selectedFiles.has(file.file_id))
+    const selectedFileData = filteredAndSortedFiles.filter((file) => selectedFiles.has(file.id))
     handleBulkDelete(
       Array.from(selectedFiles),
       selectedFileData.map((file) => file.file),

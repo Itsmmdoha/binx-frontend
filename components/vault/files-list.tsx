@@ -112,7 +112,7 @@ export function FilesList({
                 onClick={onSelectAll}
                 className="text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20"
               >
-                {selectedFiles.size === files.length ? (
+                {selectedFiles.size === files.length && files.length > 0 ? (
                   <>
                     <Square className="w-4 h-4 mr-2" />
                     Deselect All
@@ -120,7 +120,7 @@ export function FilesList({
                 ) : (
                   <>
                     <CheckSquare className="w-4 h-4 mr-2" />
-                    Select All
+                    Select All ({files.length})
                   </>
                 )}
               </Button>

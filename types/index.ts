@@ -10,6 +10,7 @@ export interface FileData {
   id: string
   file: string
   size: number
+  size: number
   visibility: "public" | "private"
   date_created: string
 }

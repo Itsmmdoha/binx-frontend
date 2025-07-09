@@ -24,7 +24,7 @@ export function useFileSelection(files: FileData[]) {
     if (selectedFiles.size === files.length) {
       setSelectedFiles(new Set())
     } else {
-      setSelectedFiles(new Set(files.map((file) => file.file_id)))
+      setSelectedFiles(new Set(files.map((file) => file.id)))
     }
   }, [selectedFiles.size, files])
 
