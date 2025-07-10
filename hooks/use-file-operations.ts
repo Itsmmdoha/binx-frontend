@@ -302,34 +302,66 @@ export function useFileOperations(fetchVaultData: (token: string) => void, clear
     }
   }, [visibilityDialog, fetchVaultData, clearAuthAndRedirect])
 
-  const handleCopyPublicLink = useCallback(async (file: FileData) => {
-    if (file.visibility !== "public") {
-      toast({
-        title: "File not public",
-        description: "Only public files have shareable links",
-        variant: "destructive",
-      })
-      return
-    }
+  const handleCopyPublicLink = useCallback(
+    async (file: FileData, vaultName: string) => {
+      try {
+        const token = localStorage.getItem("token")
+        if (!token) {
+          clearAuthAndRedirect()
+          return
+        }
 
-    try {
-      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin
-      const publicUrl = `${siteUrl}/public/${file.id}`
-      await navigator.clipboard.writeText(publicUrl)
+        // First, make the file public if it's not already
+        if (file.visibility !== "public") {
+          const apiUrl = getApiUrl()
+          const response = await fetch(`${apiUrl}/file/${file.id}`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              visibility: "public",
+            }),
+          })
 
-      toast({
-        title: "Link copied",
-        description: "Public link copied to clipboard",
-      })
-    } catch (error) {
-      console.error("Copy link error:", error)
-      toast({
-        title: "Copy failed",
-        description: "Failed to copy link to clipboard",
-        variant: "destructive",
-      })
-    }
-  }, [])
+          if (!response.ok) {
+            if (response.status === 401) {
+              clearAuthAndRedirect()
+              return
+            }
+            throw new Error("Failed to make file public")
+          }
+
+          // Refresh vault data to update the UI
+          fetchVaultData(token)
+        }
+
+        // Generate the correct public URL format
+        const apiUrl = getApiUrl()
+        const publicUrl = `${apiUrl}/${vaultName}/file/${file.id}`
+
+        // Copy to clipboard
+        await navigator.clipboard.writeText(publicUrl)
+
+        toast({
+          title: "Public link copied",
+          description:
+            file.visibility !== "public"
+              ? "File made public and link copied to clipboard"
+              : "Public link copied to clipboard",
+        })
+      } catch (error) {
+        console.error("Copy public link error:", error)
+        toast({
+          title: "Copy link failed",
+          description: "Failed to copy public link. Please try again.",
+          variant: "destructive",
+        })
+      }
+    },
+    [clearAuthAndRedirect, fetchVaultData],
+  )
 
   return {
     renameDialog,

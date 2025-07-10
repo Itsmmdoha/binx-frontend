@@ -138,6 +138,7 @@ export default function VaultPage() {
           selectedFiles={selectedFiles}
           searchQuery={searchQuery}
           sortOption={sortOption}
+          vaultName={vaultName}
           onSearchChange={setSearchQuery}
           onSortChange={setSortOption}
           onFileSelect={toggleFileSelection}
