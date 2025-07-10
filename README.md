@@ -32,8 +32,9 @@ A Next.js frontend for [binx](https://github.com/itsmmdoha/binx), built with Typ
    Create a `.env` file in the root directory:
    ```env
    NEXT_PUBLIC_BINX_API_URL=http://localhost:8000
+   NEXT_PUBLIC_SITE_URL=http://localhost:3000 
    NEXT_PUBLIC_HOUNDSEC_URL=https://houndsec.net
-   NEXT_PUBLIC_GITHUB_URL=https://github.com/Itsmmdoha/binx 
+   NEXT_PUBLIC_GITHUB_URL=https://github.com/Itsmmdoha/binx
    NEXT_PUBLIC_API_DOCS_URL=https://github.com/Itsmmdoha/BinX/blob/main/API_Docs.md
    ```
    
@@ -78,6 +79,7 @@ A Next.js frontend for [binx](https://github.com/itsmmdoha/binx), built with Typ
 The application uses the following environment variables:
 
 - `NEXT_PUBLIC_BINX_API_URL` - Backend API endpoint
+- `NEXT_PUBLIC_SITE_URL` - Frontend Base URL
 - `NEXT_PUBLIC_HOUNDSEC_URL` -  HoundSec.net website URL
 - `NEXT_PUBLIC_GITHUB_URL` - GitHub repository URL  
 - `NEXT_PUBLIC_API_DOCS_URL` - API documentation URL
