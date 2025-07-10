@@ -12,6 +12,40 @@ export default function LandingPage() {
     <>
       <ServiceWorkerRegistration />
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900 relative overflow-hidden">
+        {/* Structured Data for SEO */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "WebApplication",
+              name: "BinX",
+              description:
+                "Secure file storage and vault service. Store any media files or data archives with password-protected vaults.",
+              url: "https://binx.houndsec.net",
+              applicationCategory: "BusinessApplication",
+              operatingSystem: "Web",
+              offers: {
+                "@type": "Offer",
+                price: "0",
+                priceCurrency: "USD",
+              },
+              creator: {
+                "@type": "Organization",
+                name: "HoundSec",
+                url: "https://houndsec.net",
+              },
+              featureList: [
+                "Secure file storage",
+                "Password-protected vaults",
+                "Owner and guest access modes",
+                "File upload and download",
+                "Access control",
+              ],
+            }),
+          }}
+        />
+
         {/* Decorative blobs */}
         <div className="absolute top-20 left-10 w-32 h-32 bg-gradient-to-br from-green-400 to-green-600 rounded-full opacity-80 dark:opacity-20 blur-xl"></div>
         <div className="absolute top-40 right-20 w-24 h-24 bg-gradient-to-br from-purple-400 to-blue-600 rounded-full opacity-70 dark:opacity-20 blur-lg"></div>
@@ -37,7 +71,7 @@ export default function LandingPage() {
 
             <div className="hidden md:flex items-center space-x-8">
               <a
-                href={process.env.NEXT_PUBLIC_HOUNDSEC_URL || "https://houndsec.net"}
+                href="https://houndsec.net"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors"
@@ -45,7 +79,7 @@ export default function LandingPage() {
                 HoundSec
               </a>
               <a
-                href={process.env.NEXT_PUBLIC_GITHUB_URL || "#"}
+                href="https://github.com/houndsec"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors"
@@ -53,7 +87,7 @@ export default function LandingPage() {
                 Github
               </a>
               <a
-                href={process.env.NEXT_PUBLIC_API_DOCS_URL || "#"}
+                href="https://docs.binx.houndsec.net"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors"

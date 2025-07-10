@@ -1,255 +1,246 @@
 "use client"
 
-import { useState, useCallback } from "react"
-import type { FileData } from "@/types"
+import { useState } from "react"
+import { useToast } from "./use-toast"
 
-interface DialogState {
-  open: boolean
-  file: FileData | null
+export interface FileOperation {
+  id: string
+  name: string
+  size: number
+  visibility: "public" | "private"
+  date_created: string
 }
 
-interface RenameDialogState extends DialogState {
-  newName: string
-}
+export function useFileOperations(token: string) {
+  const [isLoading, setIsLoading] = useState(false)
+  const { toast } = useToast()
 
-interface VisibilityDialogState extends DialogState {
-  visibility: string
-}
-
-interface BulkDeleteDialogState {
-  open: boolean
-  fileIds: string[]
-  fileNames: string[]
-}
-
-export function useFileOperations(fetchVaultData: (token: string) => void, clearAuthAndRedirect: () => void) {
-  const [renameDialog, setRenameDialog] = useState<RenameDialogState>({
-    open: false,
-    file: null,
-    newName: "",
-  })
-  const [deleteDialog, setDeleteDialog] = useState<DialogState>({
-    open: false,
-    file: null,
-  })
-  const [bulkDeleteDialog, setBulkDeleteDialog] = useState<BulkDeleteDialogState>({
-    open: false,
-    fileIds: [],
-    fileNames: [],
-  })
-  const [visibilityDialog, setVisibilityDialog] = useState<VisibilityDialogState>({
-    open: false,
-    file: null,
-    visibility: "",
-  })
-
-  const handleDownload = useCallback(
-    async (fileId: string, fileName: string) => {
-      const token = localStorage.getItem("token")
-      if (!token) return
-
-      try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_BINX_API_URL}/file/${fileId}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        })
-
-        if (response.ok) {
-          const data = await response.json()
-
-          // Create a temporary anchor element for download
-          const link = document.createElement("a")
-          link.href = data.download_url
-          link.download = fileName // This suggests the filename to the browser
-          link.style.display = "none"
-
-          // Add to DOM, click, and remove
-          document.body.appendChild(link)
-          link.click()
-          document.body.removeChild(link)
-
-          // Optional: Clean up the URL if it was a blob URL (though it's not in this case)
-          // URL.revokeObjectURL(data.download_url)
-        } else if (response.status === 401) {
-          clearAuthAndRedirect()
-        }
-      } catch (error) {
-        console.error("Download failed:", error)
-      }
-    },
-    [clearAuthAndRedirect],
-  )
-
-  const handleRename = useCallback(async () => {
-    const token = localStorage.getItem("token")
-    if (!token || !renameDialog.file) return
-
+  const handleDownload = async (fileId: string, fileName: string) => {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BINX_API_URL}/file/${renameDialog.file.id}`, {
-        method: "PUT",
+      setIsLoading(true)
+      const response = await fetch(`/file/${fileId}`, {
         headers: {
-          "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ new_name: renameDialog.newName }),
       })
 
-      if (response.ok) {
-        setRenameDialog({ open: false, file: null, newName: "" })
-        fetchVaultData(token)
-      } else if (response.status === 401) {
-        clearAuthAndRedirect()
+      if (!response.ok) {
+        throw new Error("Failed to get download URL")
       }
+
+      const data = await response.json()
+
+      // Create a temporary anchor element and trigger download
+      const link = document.createElement("a")
+      link.href = data.download_url
+      link.download = fileName
+      link.style.display = "none"
+
+      // Add to DOM, click, and remove
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      toast({
+        title: "Success",
+        description: "File download started",
+      })
     } catch (error) {
-      console.error("Rename failed:", error)
+      console.error("Download error:", error)
+      toast({
+        title: "Error",
+        description: "Failed to download file",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
     }
-  }, [renameDialog, fetchVaultData, clearAuthAndRedirect])
+  }
 
-  const handleDelete = useCallback(async () => {
-    const token = localStorage.getItem("token")
-    if (!token || !deleteDialog.file) return
-
+  const handleDelete = async (fileId: string) => {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BINX_API_URL}/file/${deleteDialog.file.id}`, {
+      setIsLoading(true)
+      const response = await fetch(`/file/${fileId}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,
         },
       })
 
-      if (response.ok) {
-        setDeleteDialog({ open: false, file: null })
-        fetchVaultData(token)
-      } else if (response.status === 401) {
-        clearAuthAndRedirect()
+      if (!response.ok) {
+        throw new Error("Failed to delete file")
       }
-    } catch (error) {
-      console.error("Delete failed:", error)
-    }
-  }, [deleteDialog, fetchVaultData, clearAuthAndRedirect])
 
-  const handleBulkDelete = useCallback((fileIds: string[], fileNames: string[]) => {
-    setBulkDeleteDialog({
-      open: true,
-      fileIds,
-      fileNames,
-    })
-  }, [])
-
-  const handleBulkDeleteConfirm = useCallback(async () => {
-    const token = localStorage.getItem("token")
-    if (!token || bulkDeleteDialog.fileIds.length === 0) return
-
-    try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BINX_API_URL}/file/bulk-delete`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          file_ids: bulkDeleteDialog.fileIds,
-        }),
+      toast({
+        title: "Success",
+        description: "File deleted successfully",
       })
-
-      if (response.ok) {
-        setBulkDeleteDialog({ open: false, fileIds: [], fileNames: [] })
-        fetchVaultData(token)
-      } else if (response.status === 401) {
-        clearAuthAndRedirect()
-      }
     } catch (error) {
-      console.error("Bulk delete failed:", error)
+      console.error("Delete error:", error)
+      toast({
+        title: "Error",
+        description: "Failed to delete file",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
     }
-  }, [bulkDeleteDialog, fetchVaultData, clearAuthAndRedirect])
+  }
 
-  const handleVisibilityChange = useCallback(async () => {
-    const token = localStorage.getItem("token")
-    if (!token || !visibilityDialog.file) return
-
+  const handleRename = async (fileId: string, newName: string) => {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BINX_API_URL}/file/${visibilityDialog.file.id}`, {
+      setIsLoading(true)
+      const response = await fetch(`/file/${fileId}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ visibility: visibilityDialog.visibility }),
+        body: JSON.stringify({ new_name: newName }),
       })
 
-      if (response.ok) {
-        setVisibilityDialog({ open: false, file: null, visibility: "" })
-        fetchVaultData(token)
-      } else if (response.status === 401) {
-        clearAuthAndRedirect()
+      if (!response.ok) {
+        throw new Error("Failed to rename file")
       }
+
+      toast({
+        title: "Success",
+        description: "File renamed successfully",
+      })
     } catch (error) {
-      console.error("Visibility change failed:", error)
+      console.error("Rename error:", error)
+      toast({
+        title: "Error",
+        description: "Failed to rename file",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
     }
-  }, [visibilityDialog, fetchVaultData, clearAuthAndRedirect])
+  }
 
-  const handleCopyPublicLink = useCallback(
-    async (file: FileData) => {
-      const token = localStorage.getItem("token")
-      const vaultName = localStorage.getItem("vaultName")
-      if (!token || !vaultName) return
+  const handleVisibilityChange = async (fileId: string, visibility: "public" | "private") => {
+    try {
+      setIsLoading(true)
+      const response = await fetch(`/file/${fileId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ visibility }),
+      })
 
-      try {
-        // First, make the file public
-        const response = await fetch(`${process.env.NEXT_PUBLIC_BINX_API_URL}/file/${file.id}`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ visibility: "public" }),
-        })
-
-        if (response.ok) {
-          // Generate the public link
-          const publicLink = `${process.env.NEXT_PUBLIC_BINX_API_URL}/${vaultName}/file/${file.id}`
-
-          // Copy to clipboard
-          try {
-            await navigator.clipboard.writeText(publicLink)
-            // You might want to show a toast notification here
-            console.log("Public link copied to clipboard:", publicLink)
-          } catch (clipboardError) {
-            console.error("Failed to copy to clipboard:", clipboardError)
-            // Fallback: show the link in an alert or modal
-            alert(`Public link: ${publicLink}`)
-          }
-
-          // Refresh the vault data to show updated visibility
-          fetchVaultData(token)
-        } else if (response.status === 401) {
-          clearAuthAndRedirect()
-        } else {
-          console.error("Failed to make file public")
-        }
-      } catch (error) {
-        console.error("Copy public link failed:", error)
+      if (!response.ok) {
+        throw new Error("Failed to update file visibility")
       }
-    },
-    [fetchVaultData, clearAuthAndRedirect],
-  )
+
+      toast({
+        title: "Success",
+        description: `File is now ${visibility}`,
+      })
+    } catch (error) {
+      console.error("Visibility change error:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update file visibility",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleBulkDelete = async (fileIds: string[]) => {
+    try {
+      setIsLoading(true)
+      const response = await fetch("/file/bulk-delete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ file_ids: fileIds }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to delete files")
+      }
+
+      const data = await response.json()
+
+      // Notify about deleted files
+      data.deleted_files.file_ids.forEach((fileId: string) => {
+        toast({
+          title: "Success",
+          description: `File ${fileId} deleted successfully`,
+        })
+      })
+
+      if (data.files_not_found.count > 0) {
+        toast({
+          title: "Warning",
+          description: `${data.files_not_found.count} file(s) were not found`,
+          variant: "destructive",
+        })
+      }
+
+      setIsLoading(false)
+      return data
+    } catch (error) {
+      setIsLoading(false)
+      toast({
+        title: "Error",
+        description: "Failed to delete files",
+        variant: "destructive",
+      })
+      console.error("Bulk delete error:", error)
+      return null
+    }
+  }
+
+  const handleUpdateFile = async (
+    fileId: string,
+    updates: { new_name?: string; visibility?: "public" | "private" },
+  ) => {
+    try {
+      setIsLoading(true)
+      const response = await fetch(`/file/${fileId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(updates),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to update file")
+      }
+
+      toast({
+        title: "Success",
+        description: "File updated successfully",
+      })
+    } catch (error) {
+      console.error("Update error:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update file",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   return {
-    renameDialog,
-    deleteDialog,
-    bulkDeleteDialog,
-    visibilityDialog,
     handleDownload,
-    handleRename,
     handleDelete,
-    handleBulkDelete,
-    handleBulkDeleteConfirm,
+    handleRename,
     handleVisibilityChange,
-    handleCopyPublicLink,
-    setRenameDialog,
-    setDeleteDialog,
-    setBulkDeleteDialog,
-    setVisibilityDialog,
+    handleBulkDelete,
+    handleUpdateFile,
+    isLoading,
   }
 }
