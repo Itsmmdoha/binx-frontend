@@ -57,7 +57,20 @@ export function useFileOperations(fetchVaultData: (token: string) => void, clear
 
         if (response.ok) {
           const data = await response.json()
-          window.open(data.download_url, "_blank")
+
+          // Create a temporary anchor element for download
+          const link = document.createElement("a")
+          link.href = data.download_url
+          link.download = fileName // This suggests the filename to the browser
+          link.style.display = "none"
+
+          // Add to DOM, click, and remove
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
+
+          // Optional: Clean up the URL if it was a blob URL (though it's not in this case)
+          // URL.revokeObjectURL(data.download_url)
         } else if (response.status === 401) {
           clearAuthAndRedirect()
         }
