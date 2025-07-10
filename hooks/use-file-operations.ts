@@ -47,8 +47,16 @@ export function useFileOperations(fetchVaultData: (token: string) => void, clear
     visibility: "",
   })
 
+  const getApiUrl = () => {
+    const baseUrl = process.env.NEXT_PUBLIC_BINX_API_URL
+    if (!baseUrl) {
+      throw new Error("NEXT_PUBLIC_BINX_API_URL environment variable is not set")
+    }
+    return baseUrl
+  }
+
   const handleDownload = useCallback(
-    async (file: FileData) => {
+    async (fileId: string, fileName: string) => {
       try {
         const token = localStorage.getItem("token")
         if (!token) {
@@ -56,7 +64,8 @@ export function useFileOperations(fetchVaultData: (token: string) => void, clear
           return
         }
 
-        const response = await fetch(`/api/file/${file.id}`, {
+        const apiUrl = getApiUrl()
+        const response = await fetch(`${apiUrl}/file/${fileId}`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -75,7 +84,7 @@ export function useFileOperations(fetchVaultData: (token: string) => void, clear
         // Create a temporary anchor element and trigger download
         const link = document.createElement("a")
         link.href = data.download_url
-        link.download = file.file
+        link.download = fileName
         link.style.display = "none"
 
         // Add to DOM, click, and remove
@@ -85,7 +94,7 @@ export function useFileOperations(fetchVaultData: (token: string) => void, clear
 
         toast({
           title: "Download started",
-          description: `Downloading ${file.file}`,
+          description: `Downloading ${fileName}`,
         })
       } catch (error) {
         console.error("Download error:", error)
@@ -109,7 +118,8 @@ export function useFileOperations(fetchVaultData: (token: string) => void, clear
         return
       }
 
-      const response = await fetch(`/api/file/${renameDialog.file.id}`, {
+      const apiUrl = getApiUrl()
+      const response = await fetch(`${apiUrl}/file/${renameDialog.file.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -155,7 +165,8 @@ export function useFileOperations(fetchVaultData: (token: string) => void, clear
         return
       }
 
-      const response = await fetch(`/api/file/${deleteDialog.file.id}`, {
+      const apiUrl = getApiUrl()
+      const response = await fetch(`${apiUrl}/file/${deleteDialog.file.id}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -205,7 +216,8 @@ export function useFileOperations(fetchVaultData: (token: string) => void, clear
         return
       }
 
-      const response = await fetch("/api/file/bulk-delete", {
+      const apiUrl = getApiUrl()
+      const response = await fetch(`${apiUrl}/file/bulk-delete`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -253,7 +265,8 @@ export function useFileOperations(fetchVaultData: (token: string) => void, clear
         return
       }
 
-      const response = await fetch(`/api/file/${visibilityDialog.file.id}`, {
+      const apiUrl = getApiUrl()
+      const response = await fetch(`${apiUrl}/file/${visibilityDialog.file.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -300,7 +313,8 @@ export function useFileOperations(fetchVaultData: (token: string) => void, clear
     }
 
     try {
-      const publicUrl = `${window.location.origin}/public/${file.id}`
+      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin
+      const publicUrl = `${siteUrl}/public/${file.id}`
       await navigator.clipboard.writeText(publicUrl)
 
       toast({
