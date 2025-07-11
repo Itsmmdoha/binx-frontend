@@ -55,6 +55,55 @@ export function useFileOperations(fetchVaultData: (token: string) => void, clear
     return baseUrl
   }
 
+  // iOS-compatible clipboard function
+  const copyToClipboard = async (text: string): Promise<boolean> => {
+    // Try modern clipboard API first
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(text)
+        return true
+      } catch (err) {
+        console.warn("Clipboard API failed, trying fallback:", err)
+      }
+    }
+
+    // Fallback for iOS and other browsers
+    try {
+      // Create a temporary textarea element
+      const textArea = document.createElement("textarea")
+      textArea.value = text
+      textArea.style.position = "fixed"
+      textArea.style.left = "-999999px"
+      textArea.style.top = "-999999px"
+      textArea.setAttribute("readonly", "")
+      textArea.style.opacity = "0"
+
+      document.body.appendChild(textArea)
+
+      // For iOS, we need to set contentEditable and focus
+      if (/iP(ad|hone|od)/.test(navigator.userAgent)) {
+        textArea.contentEditable = "true"
+        textArea.readOnly = false
+        const range = document.createRange()
+        range.selectNodeContents(textArea)
+        const selection = window.getSelection()
+        selection?.removeAllRanges()
+        selection?.addRange(range)
+        textArea.setSelectionRange(0, 999999)
+      } else {
+        textArea.select()
+      }
+
+      const successful = document.execCommand("copy")
+      document.body.removeChild(textArea)
+
+      return successful
+    } catch (err) {
+      console.error("Fallback clipboard method failed:", err)
+      return false
+    }
+  }
+
   const handleDownload = useCallback(
     async (fileId: string, fileName: string) => {
       try {
@@ -341,16 +390,25 @@ export function useFileOperations(fetchVaultData: (token: string) => void, clear
         const apiUrl = getApiUrl()
         const publicUrl = `${apiUrl}/${vaultName}/file/${file.id}`
 
-        // Copy to clipboard
-        await navigator.clipboard.writeText(publicUrl)
+        // Copy to clipboard using iOS-compatible method
+        const success = await copyToClipboard(publicUrl)
 
-        toast({
-          title: "Public link copied",
-          description:
-            file.visibility !== "public"
-              ? "File made public and link copied to clipboard"
-              : "Public link copied to clipboard",
-        })
+        if (success) {
+          toast({
+            title: "Public link copied",
+            description:
+              file.visibility !== "public"
+                ? "File made public and link copied to clipboard"
+                : "Public link copied to clipboard",
+          })
+        } else {
+          // If copying fails, show the URL in a toast for manual copying
+          toast({
+            title: "Copy failed",
+            description: `Please copy manually: ${publicUrl}`,
+            variant: "destructive",
+          })
+        }
       } catch (error) {
         console.error("Copy public link error:", error)
         toast({
