@@ -8,6 +8,11 @@ import { ServiceWorkerRegistration } from "@/components/service-worker-registrat
 export default function LandingPage() {
   const currentYear = new Date().getFullYear()
 
+  // Get URLs from environment variables
+  const houndSecUrl = process.env.NEXT_PUBLIC_HOUNDSEC_URL || "https://houndsec.net"
+  const githubUrl = process.env.NEXT_PUBLIC_GITHUB_URL || "https://github.com/houndsec"
+  const apiDocsUrl = process.env.NEXT_PUBLIC_API_DOCS_URL || "https://docs.binx.houndsec.net"
+
   return (
     <>
       <ServiceWorkerRegistration />
@@ -71,7 +76,7 @@ export default function LandingPage() {
 
             <div className="hidden md:flex items-center space-x-8">
               <a
-                href="https://houndsec.net"
+                href={houndSecUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors"
@@ -79,7 +84,7 @@ export default function LandingPage() {
                 HoundSec
               </a>
               <a
-                href="https://github.com/houndsec"
+                href={githubUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors"
@@ -87,7 +92,7 @@ export default function LandingPage() {
                 Github
               </a>
               <a
-                href="https://docs.binx.houndsec.net"
+                href={apiDocsUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors"
