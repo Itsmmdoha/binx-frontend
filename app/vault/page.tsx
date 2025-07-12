@@ -69,7 +69,7 @@ export default function VaultPage() {
     const vault = localStorage.getItem("vaultName")
 
     if (!token || !type || !vault) {
-      router.push("/login")
+      router.push("/login/")
       return
     }
 

@@ -11,7 +11,7 @@ const nextConfig = {
     unoptimized: true,
   },
   output: "export",
-  trailingSlash: true,
+  //trailingSlash: true,
 }
 
 module.exports = nextConfig
