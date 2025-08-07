@@ -58,17 +58,14 @@ export interface UploadChunk {
 }
 
 export interface MultipartInitResponse {
-  uploadId: string
-  chunkSize: number
+  message: string
+  file_id: string
 }
 
 export interface ChunkUploadResponse {
-  etag: string
-  chunkNumber: number
+  message: string
 }
 
 export interface MultipartCompleteResponse {
-  fileId: string
-  fileName: string
-  size: number
+  message: string
 }
