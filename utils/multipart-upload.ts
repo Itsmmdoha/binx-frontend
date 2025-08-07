@@ -6,6 +6,8 @@ import type { MultipartUpload, UploadChunk, MultipartInitResponse, ChunkUploadRe
 export const MULTIPART_THRESHOLD = 20 * 1024 * 1024 // 20MB
 export const DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024 // 5MB chunks
 export const STORAGE_KEY = "binx_incomplete_uploads"
+export const MAX_CHUNK_RETRIES = 3 // Maximum retry attempts for failed chunks
+export const RETRY_DELAY_BASE = 1000 // Base delay in milliseconds for retry backoff
 
 // Local storage management
 export function getIncompleteUploads(): MultipartUpload[] {
@@ -46,11 +48,55 @@ export function saveIncompleteUpload(upload: MultipartUpload): void {
   }
 }
 
+export function saveFilePathForUpload(fileId: string, filePath: string): void {
+  try {
+    const pathsKey = 'binx_file_paths'
+    const storedPaths = localStorage.getItem(pathsKey)
+    const paths = storedPaths ? JSON.parse(storedPaths) : {}
+    paths[fileId] = filePath
+    localStorage.setItem(pathsKey, JSON.stringify(paths))
+  } catch (error) {
+    console.error('Failed to save file path:', error)
+  }
+}
+
+export function getFilePathForUpload(fileId: string): string | null {
+  try {
+    const pathsKey = 'binx_file_paths'
+    const storedPaths = localStorage.getItem(pathsKey)
+    if (!storedPaths) return null
+    const paths = JSON.parse(storedPaths)
+    return paths[fileId] || null
+  } catch (error) {
+    console.error('Failed to get file path:', error)
+    return null
+  }
+}
+
+export function removeFilePathForUpload(fileId: string): void {
+  try {
+    const pathsKey = 'binx_file_paths'
+    const storedPaths = localStorage.getItem(pathsKey)
+    if (!storedPaths) return
+    const paths = JSON.parse(storedPaths)
+    delete paths[fileId]
+    localStorage.setItem(pathsKey, JSON.stringify(paths))
+  } catch (error) {
+    console.error('Failed to remove file path:', error)
+  }
+}
+
 export function removeIncompleteUpload(uploadId: string): void {
   try {
     const uploads = getIncompleteUploads()
+    const upload = uploads.find(u => u.id === uploadId)
     const filtered = uploads.filter(u => u.id !== uploadId)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered))
+    
+    // Also remove file path if exists
+    if (upload?.uploadId) {
+      removeFilePathForUpload(upload.uploadId)
+    }
   } catch (error) {
     console.error('Failed to remove incomplete upload:', error)
   }
@@ -121,6 +167,17 @@ export async function uploadChunk(
   token: string,
   onProgress?: (loaded: number, total: number) => void
 ): Promise<ChunkUploadResponse> {
+  return uploadChunkWithRetry(fileId, partNumber, chunk, token, onProgress, MAX_CHUNK_RETRIES)
+}
+
+async function uploadChunkWithRetry(
+  fileId: string,
+  partNumber: number,
+  chunk: Blob,
+  token: string,
+  onProgress?: (loaded: number, total: number) => void,
+  retriesLeft: number = MAX_CHUNK_RETRIES
+): Promise<ChunkUploadResponse> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     const formData = new FormData()
@@ -144,12 +201,34 @@ export async function uploadChunk(
           reject(new Error('Invalid response format'))
         }
       } else {
-        reject(new Error(`Chunk upload failed: HTTP ${xhr.status}`))
+        // Handle non-200 responses with retry logic
+        if (retriesLeft > 0) {
+          console.warn(`Chunk ${partNumber} upload failed (HTTP ${xhr.status}), retrying... (${retriesLeft} attempts left)`)
+          const delay = RETRY_DELAY_BASE * (MAX_CHUNK_RETRIES - retriesLeft + 1)
+          setTimeout(() => {
+            uploadChunkWithRetry(fileId, partNumber, chunk, token, onProgress, retriesLeft - 1)
+              .then(resolve)
+              .catch(reject)
+          }, delay)
+        } else {
+          reject(new Error(`Chunk upload failed after ${MAX_CHUNK_RETRIES} attempts: HTTP ${xhr.status}`))
+        }
       }
     })
     
     xhr.addEventListener('error', () => {
-      reject(new Error('Network error during chunk upload'))
+      // Handle network errors with retry logic
+      if (retriesLeft > 0) {
+        console.warn(`Chunk ${partNumber} network error, retrying... (${retriesLeft} attempts left)`)
+        const delay = RETRY_DELAY_BASE * (MAX_CHUNK_RETRIES - retriesLeft + 1)
+        setTimeout(() => {
+          uploadChunkWithRetry(fileId, partNumber, chunk, token, onProgress, retriesLeft - 1)
+            .then(resolve)
+            .catch(reject)
+        }, delay)
+      } else {
+        reject(new Error(`Network error during chunk upload after ${MAX_CHUNK_RETRIES} attempts`))
+      }
     })
     
     xhr.addEventListener('abort', () => {

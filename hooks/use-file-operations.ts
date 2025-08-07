@@ -23,7 +23,11 @@ interface BulkDeleteDialogState {
   fileNames: string[]
 }
 
-export function useFileOperations(fetchVaultData: (token: string) => void, clearAuthAndRedirect: () => void) {
+export function useFileOperations(
+  fetchVaultData: (token: string) => void, 
+  clearAuthAndRedirect: () => void,
+  clearSelection?: () => void
+) {
   const [renameDialog, setRenameDialog] = useState<RenameDialogState>({
     open: false,
     file: null,
@@ -236,6 +240,12 @@ export function useFileOperations(fetchVaultData: (token: string) => void, clear
       })
 
       setDeleteDialog({ open: false, file: null })
+      
+      // Clear selection mode after successful delete
+      if (clearSelection) {
+        clearSelection()
+      }
+      
       fetchVaultData(token)
     } catch (error) {
       console.error("Delete error:", error)
@@ -245,7 +255,7 @@ export function useFileOperations(fetchVaultData: (token: string) => void, clear
         variant: "destructive",
       })
     }
-  }, [deleteDialog, fetchVaultData, clearAuthAndRedirect])
+  }, [deleteDialog, fetchVaultData, clearAuthAndRedirect, clearSelection])
 
   const handleBulkDelete = useCallback((fileIds: string[], fileNames: string[]) => {
     setBulkDeleteDialog({
@@ -293,6 +303,12 @@ export function useFileOperations(fetchVaultData: (token: string) => void, clear
       })
 
       setBulkDeleteDialog({ open: false, fileIds: [], fileNames: [] })
+      
+      // Clear selection mode after successful bulk delete
+      if (clearSelection) {
+        clearSelection()
+      }
+      
       fetchVaultData(token)
     } catch (error) {
       console.error("Bulk delete error:", error)
@@ -302,7 +318,7 @@ export function useFileOperations(fetchVaultData: (token: string) => void, clear
         variant: "destructive",
       })
     }
-  }, [bulkDeleteDialog, fetchVaultData, clearAuthAndRedirect])
+  }, [bulkDeleteDialog, fetchVaultData, clearAuthAndRedirect, clearSelection])
 
   const handleVisibilityChange = useCallback(async () => {
     if (!visibilityDialog.file || !visibilityDialog.visibility) return

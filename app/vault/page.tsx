@@ -65,7 +65,7 @@ export default function VaultPage() {
     setDeleteDialog,
     setBulkDeleteDialog,
     setVisibilityDialog,
-  } = useFileOperations(fetchVaultData, clearAuthAndRedirect)
+  } = useFileOperations(fetchVaultData, clearAuthAndRedirect, clearSelection)
 
   useEffect(() => {
     const token = localStorage.getItem("token")
@@ -101,6 +101,16 @@ export default function VaultPage() {
     setVaultName(newName)
   }
 
+  const getRunningUploads = (): Set<string> => {
+    const running = new Set<string>()
+    uploadQueue.forEach(upload => {
+      if (upload.status === 'uploading' && upload.multipartUpload?.uploadId) {
+        running.add(upload.multipartUpload.uploadId)
+      }
+    })
+    return running
+  }
+
   const handleVaultDeleted = () => {
     router.push("/")
   }
@@ -132,6 +142,7 @@ export default function VaultPage() {
         onVaultDeleted={handleVaultDeleted}
         onRetryMultipartUpload={retryMultipartUpload}
         onAbortMultipartUpload={abortMultipartUploadHandler}
+        runningUploads={getRunningUploads()}
       />
 
       <div className="p-6">

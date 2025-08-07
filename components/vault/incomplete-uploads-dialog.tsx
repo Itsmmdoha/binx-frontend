@@ -25,16 +25,20 @@ import { formatFileSize } from "@/utils"
 import type { MultipartUpload } from "@/types"
 
 interface IncompleteUploadsDialogProps {
-  onRetryUpload: (upload: MultipartUpload) => void
+  onRetryUpload: (upload: MultipartUpload, file?: File) => void
   onAbortUpload: (upload: MultipartUpload) => void
+  runningUploads?: Set<string> // Track which uploads are currently running
 }
 
 export function IncompleteUploadsDialog({ 
   onRetryUpload, 
-  onAbortUpload 
+  onAbortUpload,
+  runningUploads = new Set()
 }: IncompleteUploadsDialogProps) {
   const [open, setOpen] = useState(false)
   const [uploads, setUploads] = useState<MultipartUpload[]>([])
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [retryingUpload, setRetryingUpload] = useState<MultipartUpload | null>(null)
 
   const loadUploads = async () => {
     try {
@@ -80,8 +84,25 @@ export function IncompleteUploadsDialog({
   }
 
   const handleRetry = (upload: MultipartUpload) => {
-    setOpen(false)
-    onRetryUpload(upload)
+    setRetryingUpload(upload)
+    // Create file input for file selection
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '*/*'
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0]
+      if (file) {
+        if (file.name === upload.fileName && file.size === upload.fileSize) {
+          setOpen(false)
+          onRetryUpload(upload, file)
+          setRetryingUpload(null)
+        } else {
+          alert('Selected file does not match the original upload. Please select the correct file.')
+        }
+      }
+      setRetryingUpload(null)
+    }
+    input.click()
   }
 
   const getStatusIcon = (status: MultipartUpload['status']) => {
@@ -186,16 +207,18 @@ export function IncompleteUploadsDialog({
                         </div>
                         
                         <div className="flex space-x-2 mt-3">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleRetry(upload)}
-                            className="text-xs"
-                            disabled={upload.status === 'uploading'}
-                          >
-                            <Play className="w-3 h-3 mr-1" />
-                            Retry
-                          </Button>
+                          {!runningUploads.has(upload.uploadId) && upload.status !== 'uploading' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleRetry(upload)}
+                              className="text-xs"
+                              disabled={retryingUpload === upload}
+                            >
+                              <Play className="w-3 h-3 mr-1" />
+                              {retryingUpload === upload ? 'Select File...' : 'Retry'}
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="outline"
@@ -203,7 +226,7 @@ export function IncompleteUploadsDialog({
                             className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
                           >
                             <Trash2 className="w-3 h-3 mr-1" />
-                            Abort
+                            {runningUploads.has(upload.uploadId) ? 'Abort' : 'Remove'}
                           </Button>
                         </div>
                       </div>

@@ -21,8 +21,9 @@ interface VaultHeaderProps {
   onLogout: () => void
   onVaultRenamed?: (newName: string) => void
   onVaultDeleted?: () => void
-  onRetryMultipartUpload?: (upload: MultipartUpload) => void
+  onRetryMultipartUpload?: (upload: MultipartUpload, file?: File) => void
   onAbortMultipartUpload?: (upload: MultipartUpload) => void
+  runningUploads?: Set<string>
 }
 
 export function VaultHeader({
@@ -39,6 +40,7 @@ export function VaultHeader({
   onVaultDeleted,
   onRetryMultipartUpload,
   onAbortMultipartUpload,
+  runningUploads = new Set(),
 }: VaultHeaderProps) {
   return (
     <>
@@ -74,6 +76,7 @@ export function VaultHeader({
                 <IncompleteUploadsDialog 
                   onRetryUpload={onRetryMultipartUpload || (() => {})}
                   onAbortUpload={onAbortMultipartUpload || (() => {})}
+                  runningUploads={runningUploads}
                 />
                 <Button
                   onClick={() => document.getElementById("file-input")?.click()}

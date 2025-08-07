@@ -17,6 +17,9 @@ import {
   removeIncompleteUpload,
   calculateUploadProgress,
   getIncompleteUploadsFromAPI,
+  saveFilePathForUpload,
+  getFilePathForUpload,
+  removeFilePathForUpload,
   MULTIPART_THRESHOLD,
   DEFAULT_CHUNK_SIZE
 } from "@/utils/multipart-upload"
@@ -99,11 +102,13 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
       // Initiate multipart upload with API
       const initResponse = await initiateMultipartUpload(file.name, file.size, token)
       
-      // Update with actual file ID from API
+      // Update with actual file ID from API and store file path
       multipartUpload.uploadId = initResponse.file_id
-      
-      // Use the API file_id for all subsequent operations
       const fileId = initResponse.file_id
+      
+      // Store file path for retry functionality
+      saveFilePathForUpload(fileId, file.name)
+      
       saveIncompleteUpload(multipartUpload)
       
       let isPaused = false
@@ -204,7 +209,7 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
         // Complete multipart upload
         const completeResponse = await completeMultipartUpload(fileId, token)
         
-        // Mark as completed
+        // Mark as completed and clean up
         multipartUpload.status = "completed"
         removeIncompleteUpload(multipartUpload.id)
         
@@ -539,17 +544,51 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
     )
   }, [])
 
-  const retryMultipartUpload = useCallback(async (incompleteUpload: MultipartUpload) => {
+  const retryMultipartUpload = useCallback(async (incompleteUpload: MultipartUpload, fileToUpload?: File) => {
     const token = localStorage.getItem("token")
     if (!token) return
 
     try {
+      // If no file provided, try to get from stored path or prompt user
+      if (!fileToUpload) {
+        const storedPath = getFilePathForUpload(incompleteUpload.uploadId)
+        if (!storedPath) {
+          throw new Error("File path not found. Please select the original file to continue upload.")
+        }
+        // In a browser environment, we can't directly access files by path
+        // The user needs to select the file again
+        throw new Error("Please select the original file to continue upload.")
+      }
+
+      // Verify file matches the original upload
+      if (fileToUpload.name !== incompleteUpload.fileName || fileToUpload.size !== incompleteUpload.fileSize) {
+        throw new Error("Selected file doesn't match the original upload. Please select the correct file.")
+      }
+
+      // Get current server state to see which chunks are already uploaded
+      let serverUploadedChunks: Set<number> = new Set()
+      try {
+        const apiUploads = await getIncompleteUploadsFromAPI(token)
+        const serverUpload = apiUploads.find(upload => upload.uploadId === incompleteUpload.uploadId)
+        if (serverUpload) {
+          serverUploadedChunks = serverUpload.uploadedChunks
+        }
+      } catch (error) {
+        console.warn("Could not fetch server state, using local state:", error)
+        serverUploadedChunks = incompleteUpload.uploadedChunks
+      }
+
       // Create a new file info for the retry
       const fileInfo: FileUploadInfo = {
-        file: new File([], incompleteUpload.fileName), // Placeholder file object
-        status: "pending",
-        progress: calculateUploadProgress(incompleteUpload.uploadedChunks, incompleteUpload.totalChunks),
-        multipartUpload: { ...incompleteUpload, status: "uploading" }
+        file: fileToUpload,
+        status: "uploading",
+        progress: calculateUploadProgress(serverUploadedChunks, incompleteUpload.totalChunks),
+        multipartUpload: { 
+          ...incompleteUpload, 
+          status: "uploading",
+          uploadedChunks: serverUploadedChunks,
+          lastActivity: Date.now()
+        }
       }
 
       setUploadQueue([fileInfo])
@@ -557,18 +596,124 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
       setUploadCancelled(false)
       setShowDetailedProgress(false)
 
-      // Note: Since we don't have the actual file data, we would need to
-      // prompt the user to select the file again or store the file path in the incomplete upload
-      // For now, we'll show an error asking the user to reselect the file
+      const fileId = incompleteUpload.uploadId
+      const chunks = createChunks(fileToUpload, incompleteUpload.chunkSize)
       
-      if (!incompleteUpload.filePath) {
-        throw new Error("File not found. Please select the file again to continue upload.")
+      let isPaused = false
+      let isAborted = false
+      
+      const uploadControls = {
+        abort: () => {
+          isAborted = true
+          abortMultipartUpload(fileId, token).catch(console.error)
+          removeIncompleteUpload(incompleteUpload.id)
+        },
+        pause: () => {
+          isPaused = true
+          fileInfo.multipartUpload!.status = "paused"
+          saveIncompleteUpload(fileInfo.multipartUpload!)
+        },
+        resume: () => {
+          isPaused = false
+          fileInfo.multipartUpload!.status = "uploading"
+          saveIncompleteUpload(fileInfo.multipartUpload!)
+        }
       }
+      
+      activeUploadsRef.current.set(incompleteUpload.id, uploadControls)
 
-      // In a real implementation, you would need to recreate the File object
-      // from the stored path or prompt user to reselect
-      throw new Error("Please select the original file again to continue upload.")
-
+      // Upload only the missing chunks
+      for (let i = 0; i < chunks.length; i++) {
+        if (isAborted || uploadCancelled) break
+        
+        const chunk = chunks[i]
+        
+        // Skip already uploaded chunks
+        if (serverUploadedChunks.has(chunk.chunkNumber)) {
+          continue
+        }
+        
+        // Wait if paused
+        while (isPaused && !isAborted && !uploadCancelled) {
+          await new Promise(resolve => {
+            setTimeout(resolve, 1000)
+          })
+        }
+        
+        if (isAborted || uploadCancelled) break
+        
+        try {
+          await uploadChunk(
+            fileId,
+            chunk.chunkNumber,
+            chunk.data,
+            token,
+            (loaded, total) => {
+              const chunkProgress = (loaded / total) * 100
+              const overallProgress = Math.round(
+                ((fileInfo.multipartUpload!.uploadedChunks.size + chunkProgress / 100) / fileInfo.multipartUpload!.totalChunks) * 100
+              )
+              
+              setUploadQueue(prev =>
+                prev.map(item => ({ ...item, progress: overallProgress }))
+              )
+            }
+          )
+          
+          // Mark chunk as completed
+          fileInfo.multipartUpload!.uploadedChunks.add(chunk.chunkNumber)
+          fileInfo.multipartUpload!.lastActivity = Date.now()
+          
+          // Update progress
+          const progress = calculateUploadProgress(fileInfo.multipartUpload!.uploadedChunks, fileInfo.multipartUpload!.totalChunks)
+          
+          setUploadQueue(prev =>
+            prev.map(item => ({ ...item, progress }))
+          )
+          
+          // Save progress
+          saveIncompleteUpload(fileInfo.multipartUpload!)
+          
+        } catch (error) {
+          if (isAborted || uploadCancelled) break
+          
+          fileInfo.multipartUpload!.status = "failed"
+          fileInfo.multipartUpload!.error = error instanceof Error ? error.message : "Chunk upload failed"
+          saveIncompleteUpload(fileInfo.multipartUpload!)
+          
+          setUploadQueue(prev =>
+            prev.map(item => ({ ...item, status: "failed" as const, error: fileInfo.multipartUpload!.error }))
+          )
+          
+          throw error
+        }
+      }
+      
+      if (!isAborted && !uploadCancelled) {
+        // Complete multipart upload
+        await completeMultipartUpload(fileId, token)
+        
+        // Mark as completed and clean up
+        removeIncompleteUpload(incompleteUpload.id)
+        
+        setUploadQueue(prev =>
+          prev.map(item => ({ ...item, status: "completed" as const, progress: 100 }))
+        )
+        
+        // Refresh vault data
+        fetchVaultData(token)
+      }
+      
+      activeUploadsRef.current.delete(incompleteUpload.id)
+      
+      // Cleanup after completion/failure
+      setTimeout(() => {
+        setIsUploading(false)
+        setUploadQueue([])
+        setUploadCancelled(false)
+        setShowDetailedProgress(false)
+      }, 1500)
+      
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Failed to retry upload"
       
@@ -581,7 +726,7 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
         setUploadQueue([])
       }, 3000)
     }
-  }, [])
+  }, [uploadCancelled, fetchVaultData])
 
   const abortMultipartUploadHandler = useCallback(async (incompleteUpload: MultipartUpload) => {
     const token = localStorage.getItem("token")
