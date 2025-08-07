@@ -65,7 +65,7 @@ export default function VaultPage() {
     setDeleteDialog,
     setBulkDeleteDialog,
     setVisibilityDialog,
-  } = useFileOperations(fetchVaultData, clearAuthAndRedirect)
+  } = useFileOperations(fetchVaultData, clearAuthAndRedirect, clearSelection)
 
   useEffect(() => {
     const token = localStorage.getItem("token")
