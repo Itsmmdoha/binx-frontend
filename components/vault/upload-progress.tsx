@@ -2,15 +2,17 @@
 
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { X, ChevronUp, ChevronDown, Check, AlertCircle, XCircle, AlertTriangle } from "lucide-react"
+import { X, ChevronUp, ChevronDown, Check, AlertCircle, XCircle, AlertTriangle, Pause, Play } from "lucide-react"
 import { getFileIcon, getFileIconColor } from "@/utils/fileIcons"
 
 interface FileUploadInfo {
   file: File
-  status: "pending" | "uploading" | "completed" | "failed" | "cancelled" | "size-exceeded"
+  status: "pending" | "uploading" | "completed" | "failed" | "cancelled" | "size-exceeded" | "paused"
   progress: number
   error?: string
   xhr?: XMLHttpRequest
+  multipartUpload?: any
+  pauseResolve?: () => void
 }
 
 interface UploadSummary {
@@ -30,6 +32,8 @@ interface UploadProgressProps {
   uploadSummary: UploadSummary
   onToggleDetailed: () => void
   onCancel: () => void
+  onPause?: (uploadId?: string) => void
+  onResume?: (uploadId?: string) => void
 }
 
 export function UploadProgress({
@@ -40,6 +44,8 @@ export function UploadProgress({
   uploadSummary,
   onToggleDetailed,
   onCancel,
+  onPause,
+  onResume,
 }: UploadProgressProps) {
   if (!isUploading || uploadQueue.length === 0) {
     return null
@@ -101,9 +107,16 @@ export function UploadProgress({
                 >
                   {currentUploadingFile.file.name}
                 </span>
-                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
+                {currentUploadingFile.status === "uploading" ? (
+                  <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
+                ) : currentUploadingFile.status === "paused" ? (
+                  <Pause className="w-4 h-4 text-yellow-600 flex-shrink-0" />
+                ) : null}
               </div>
               <Progress value={currentUploadingFile.progress} className="h-2 transition-all duration-150" />
+              {currentUploadingFile.status === "paused" && (
+                <p className="text-xs text-yellow-600 dark:text-yellow-400">Upload paused</p>
+              )}
             </div>
           ) : allUploadsComplete && hasCompletedUploads ? (
             // Show completion status
@@ -182,6 +195,7 @@ export function UploadProgress({
                       {fileInfo.status === "failed" && <AlertCircle className="w-3 h-3 text-red-600" />}
                       {fileInfo.status === "cancelled" && <XCircle className="w-3 h-3 text-gray-500" />}
                       {fileInfo.status === "size-exceeded" && <AlertTriangle className="w-3 h-3 text-orange-600" />}
+                      {fileInfo.status === "paused" && <Pause className="w-3 h-3 text-yellow-600" />}
                       {fileInfo.status === "uploading" && (
                         <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                       )}
@@ -191,8 +205,36 @@ export function UploadProgress({
                     </div>
                   </div>
 
-                  {fileInfo.status === "uploading" && (
+                  {(fileInfo.status === "uploading" || fileInfo.status === "paused") && (
                     <Progress value={fileInfo.progress} className="h-1 transition-all duration-150" />
+                  )}
+
+                  {/* Pause/Resume controls for multipart uploads */}
+                  {fileInfo.multipartUpload && (fileInfo.status === "uploading" || fileInfo.status === "paused") && (
+                    <div className="flex space-x-2 mt-2 pl-6">
+                      {fileInfo.status === "uploading" && onPause && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onPause(fileInfo.multipartUpload?.id)}
+                          className="h-6 text-xs px-2"
+                        >
+                          <Pause className="w-3 h-3 mr-1" />
+                          Pause
+                        </Button>
+                      )}
+                      {fileInfo.status === "paused" && onResume && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onResume(fileInfo.multipartUpload?.id)}
+                          className="h-6 text-xs px-2"
+                        >
+                          <Play className="w-3 h-3 mr-1" />
+                          Resume
+                        </Button>
+                      )}
+                    </div>
                   )}
 
                   {(fileInfo.status === "failed" ||
