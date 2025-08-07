@@ -20,7 +20,7 @@ import {
   AlertCircle,
   Trash2
 } from "lucide-react"
-import { getIncompleteUploads, removeIncompleteUpload, formatUploadTime, calculateUploadProgress } from "@/utils/multipart-upload"
+import { getIncompleteUploads, getIncompleteUploadsFromAPI, removeIncompleteUpload, formatUploadTime, calculateUploadProgress } from "@/utils/multipart-upload"
 import { formatFileSize } from "@/utils"
 import type { MultipartUpload } from "@/types"
 
@@ -36,8 +36,35 @@ export function IncompleteUploadsDialog({
   const [open, setOpen] = useState(false)
   const [uploads, setUploads] = useState<MultipartUpload[]>([])
 
-  const loadUploads = () => {
-    setUploads(getIncompleteUploads())
+  const loadUploads = async () => {
+    try {
+      const token = localStorage.getItem("token")
+      if (!token) {
+        setUploads([])
+        return
+      }
+      
+      // Try to get incomplete uploads from API first
+      const apiUploads = await getIncompleteUploadsFromAPI(token)
+      
+      // Also get local uploads for any uploads that haven't been synced yet
+      const localUploads = getIncompleteUploads()
+      
+      // Merge uploads, preferring API data but including local uploads not in API
+      const mergedUploads = [...apiUploads]
+      
+      localUploads.forEach(localUpload => {
+        if (!apiUploads.find(apiUpload => apiUpload.uploadId === localUpload.uploadId)) {
+          mergedUploads.push(localUpload)
+        }
+      })
+      
+      setUploads(mergedUploads)
+    } catch (error) {
+      console.error("Failed to load incomplete uploads from API:", error)
+      // Fallback to local storage if API fails
+      setUploads(getIncompleteUploads())
+    }
   }
 
   useEffect(() => {

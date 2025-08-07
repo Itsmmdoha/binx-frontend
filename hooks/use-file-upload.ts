@@ -16,6 +16,7 @@ import {
   saveIncompleteUpload,
   removeIncompleteUpload,
   calculateUploadProgress,
+  getIncompleteUploadsFromAPI,
   MULTIPART_THRESHOLD,
   DEFAULT_CHUNK_SIZE
 } from "@/utils/multipart-upload"
@@ -98,17 +99,11 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
       // Initiate multipart upload with API
       const initResponse = await initiateMultipartUpload(file.name, file.size, token)
       
-      // Update with actual upload ID from API
-      multipartUpload.uploadId = initResponse.uploadId
-      multipartUpload.chunkSize = initResponse.chunkSize || DEFAULT_CHUNK_SIZE
+      // Update with actual file ID from API
+      multipartUpload.uploadId = initResponse.file_id
       
-      // Recalculate chunks if chunk size changed
-      const finalChunks = multipartUpload.chunkSize !== DEFAULT_CHUNK_SIZE 
-        ? createChunks(file, multipartUpload.chunkSize)
-        : chunks
-        
-      multipartUpload.totalChunks = finalChunks.length
-      
+      // Use the API file_id for all subsequent operations
+      const fileId = initResponse.file_id
       saveIncompleteUpload(multipartUpload)
       
       let isPaused = false
@@ -117,7 +112,7 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
       const uploadControls = {
         abort: () => {
           isAborted = true
-          abortMultipartUpload(multipartUpload.uploadId, token).catch(console.error)
+          abortMultipartUpload(fileId, token).catch(console.error)
           removeIncompleteUpload(multipartUpload.id)
         },
         pause: () => {
@@ -134,10 +129,8 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
       
       activeUploadsRef.current.set(uploadId, uploadControls)
       
-      const completedParts: { chunkNumber: number; etag: string }[] = []
-      
       // Upload chunks sequentially
-      for (let i = 0; i < finalChunks.length; i++) {
+      for (let i = 0; i < chunks.length; i++) {
         if (isAborted || uploadCancelled) break
         
         // Wait if paused
@@ -150,11 +143,11 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
         
         if (isAborted || uploadCancelled) break
         
-        const chunk = finalChunks[i]
+        const chunk = chunks[i]
         
         try {
           const chunkResponse = await uploadChunk(
-            multipartUpload.uploadId,
+            fileId,
             chunk.chunkNumber,
             chunk.data,
             token,
@@ -175,10 +168,6 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
           // Mark chunk as completed
           multipartUpload.uploadedChunks.add(chunk.chunkNumber)
           multipartUpload.lastActivity = Date.now()
-          completedParts.push({
-            chunkNumber: chunk.chunkNumber,
-            etag: chunkResponse.etag
-          })
           
           // Update progress
           const progress = calculateUploadProgress(multipartUpload.uploadedChunks, multipartUpload.totalChunks)
@@ -213,11 +202,7 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
       
       if (!isAborted && !uploadCancelled) {
         // Complete multipart upload
-        const completeResponse = await completeMultipartUpload(
-          multipartUpload.uploadId,
-          completedParts,
-          token
-        )
+        const completeResponse = await completeMultipartUpload(fileId, token)
         
         // Mark as completed
         multipartUpload.status = "completed"

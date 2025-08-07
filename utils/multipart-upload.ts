@@ -101,8 +101,8 @@ export async function initiateMultipartUpload(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      fileName,
-      fileSize,
+      file_name: fileName,
+      file_size: fileSize,
     }),
   })
   
@@ -115,8 +115,8 @@ export async function initiateMultipartUpload(
 }
 
 export async function uploadChunk(
-  uploadId: string,
-  chunkNumber: number,
+  fileId: string,
+  partNumber: number,
   chunk: Blob,
   token: string,
   onProgress?: (loaded: number, total: number) => void
@@ -125,8 +125,7 @@ export async function uploadChunk(
     const xhr = new XMLHttpRequest()
     const formData = new FormData()
     formData.append('chunk', chunk)
-    formData.append('chunkNumber', chunkNumber.toString())
-    formData.append('uploadId', uploadId)
+    formData.append('part_number', partNumber.toString())
     
     if (onProgress) {
       xhr.upload.addEventListener('progress', (event) => {
@@ -157,27 +156,21 @@ export async function uploadChunk(
       reject(new Error('Chunk upload aborted'))
     })
     
-    xhr.open('POST', `${process.env.NEXT_PUBLIC_BINX_API_URL}/file/multipart/upload`)
+    xhr.open('PUT', `${process.env.NEXT_PUBLIC_BINX_API_URL}/file/multipart/${fileId}/chunk`)
     xhr.setRequestHeader('Authorization', `Bearer ${token}`)
     xhr.send(formData)
   })
 }
 
 export async function completeMultipartUpload(
-  uploadId: string,
-  chunks: { chunkNumber: number; etag: string }[],
+  fileId: string,
   token: string
 ): Promise<MultipartCompleteResponse> {
-  const response = await fetch(`${process.env.NEXT_PUBLIC_BINX_API_URL}/file/multipart/complete`, {
+  const response = await fetch(`${process.env.NEXT_PUBLIC_BINX_API_URL}/file/multipart/${fileId}/complete`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      uploadId,
-      parts: chunks.sort((a, b) => a.chunkNumber - b.chunkNumber),
-    }),
   })
   
   if (!response.ok) {
@@ -188,20 +181,48 @@ export async function completeMultipartUpload(
   return response.json()
 }
 
-export async function abortMultipartUpload(uploadId: string, token: string): Promise<void> {
-  const response = await fetch(`${process.env.NEXT_PUBLIC_BINX_API_URL}/file/multipart/abort`, {
-    method: 'POST',
+export async function abortMultipartUpload(fileId: string, token: string): Promise<void> {
+  const response = await fetch(`${process.env.NEXT_PUBLIC_BINX_API_URL}/file/multipart/${fileId}/abort`, {
+    method: 'DELETE',
     headers: {
       'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ uploadId }),
   })
   
   if (!response.ok) {
     const errorText = await response.text()
     throw new Error(`Failed to abort multipart upload: ${errorText}`)
   }
+}
+
+export async function getIncompleteUploadsFromAPI(token: string): Promise<MultipartUpload[]> {
+  const response = await fetch(`${process.env.NEXT_PUBLIC_BINX_API_URL}/file/multipart/list_incomplete`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  })
+  
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Failed to get incomplete uploads: ${errorText}`)
+  }
+  
+  const data = await response.json()
+  
+  // Convert API response to our internal format
+  return (data.uploads || []).map((upload: any) => ({
+    id: upload.file_id,
+    uploadId: upload.file_id,
+    fileName: upload.file,
+    fileSize: upload.size,
+    chunkSize: DEFAULT_CHUNK_SIZE, // Default as API doesn't provide this
+    totalChunks: Math.ceil(upload.size / DEFAULT_CHUNK_SIZE),
+    uploadedChunks: new Set(upload.uploaded_parts || []),
+    status: 'pending' as const,
+    createdAt: new Date(upload.date_created).getTime(),
+    lastActivity: new Date(upload.date_created).getTime(),
+  }))
 }
 
 // Utility functions
