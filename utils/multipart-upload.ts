@@ -6,6 +6,7 @@ import type { MultipartUpload, UploadChunk, MultipartInitResponse, ChunkUploadRe
 export const MULTIPART_THRESHOLD = 20 * 1024 * 1024 // 20MB
 export const DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024 // 5MB chunks
 export const STORAGE_KEY = "binx_incomplete_uploads"
+export const RUNNING_UPLOADS_KEY = "binx_running_uploads"
 
 // Local storage management
 export function getIncompleteUploads(): MultipartUpload[] {
@@ -64,6 +65,48 @@ export function clearIncompleteUploads(): void {
   }
 }
 
+// Running uploads tracking
+export function getRunningUploads(): Set<string> {
+  try {
+    const stored = localStorage.getItem(RUNNING_UPLOADS_KEY)
+    if (!stored) return new Set()
+    
+    const uploadIds: string[] = JSON.parse(stored)
+    return new Set(uploadIds)
+  } catch (error) {
+    console.error('Failed to load running uploads:', error)
+    return new Set()
+  }
+}
+
+export function addRunningUpload(fileId: string): void {
+  try {
+    const runningUploads = getRunningUploads()
+    runningUploads.add(fileId)
+    localStorage.setItem(RUNNING_UPLOADS_KEY, JSON.stringify(Array.from(runningUploads)))
+  } catch (error) {
+    console.error('Failed to add running upload:', error)
+  }
+}
+
+export function removeRunningUpload(fileId: string): void {
+  try {
+    const runningUploads = getRunningUploads()
+    runningUploads.delete(fileId)
+    localStorage.setItem(RUNNING_UPLOADS_KEY, JSON.stringify(Array.from(runningUploads)))
+  } catch (error) {
+    console.error('Failed to remove running upload:', error)
+  }
+}
+
+export function clearRunningUploads(): void {
+  try {
+    localStorage.removeItem(RUNNING_UPLOADS_KEY)
+  } catch (error) {
+    console.error('Failed to clear running uploads:', error)
+  }
+}
+
 // File chunking utilities
 export function createChunks(file: File, chunkSize: number = DEFAULT_CHUNK_SIZE): UploadChunk[] {
   const chunks: UploadChunk[] = []
@@ -119,6 +162,38 @@ export async function uploadChunk(
   partNumber: number,
   chunk: Blob,
   token: string,
+  onProgress?: (loaded: number, total: number) => void,
+  maxRetries: number = 3
+): Promise<ChunkUploadResponse> {
+  let lastError: Error | null = null
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await uploadChunkAttempt(fileId, partNumber, chunk, token, onProgress)
+      return response
+    } catch (error) {
+      lastError = error as Error
+      console.warn(`Chunk upload attempt ${attempt} failed:`, error)
+      
+      // If this is the last attempt, throw the error
+      if (attempt === maxRetries) {
+        throw lastError
+      }
+      
+      // Wait before retrying (exponential backoff)
+      const delayMs = Math.min(1000 * Math.pow(2, attempt - 1), 10000) // 1s, 2s, 4s, max 10s
+      await new Promise(resolve => setTimeout(resolve, delayMs))
+    }
+  }
+  
+  throw lastError || new Error('Chunk upload failed after all retries')
+}
+
+function uploadChunkAttempt(
+  fileId: string,
+  partNumber: number,
+  chunk: Blob,
+  token: string,
   onProgress?: (loaded: number, total: number) => void
 ): Promise<ChunkUploadResponse> {
   return new Promise((resolve, reject) => {
@@ -144,7 +219,7 @@ export async function uploadChunk(
           reject(new Error('Invalid response format'))
         }
       } else {
-        reject(new Error(`Chunk upload failed: HTTP ${xhr.status}`))
+        reject(new Error(`Chunk upload failed: HTTP ${xhr.status} - ${xhr.responseText}`))
       }
     })
     
@@ -209,20 +284,23 @@ export async function getIncompleteUploadsFromAPI(token: string): Promise<Multip
   }
   
   const data = await response.json()
+  const runningUploads = getRunningUploads()
   
-  // Convert API response to our internal format
-  return (data.uploads || []).map((upload: any) => ({
-    id: upload.file_id,
-    uploadId: upload.file_id,
-    fileName: upload.file,
-    fileSize: upload.size,
-    chunkSize: DEFAULT_CHUNK_SIZE, // Default as API doesn't provide this
-    totalChunks: Math.ceil(upload.size / DEFAULT_CHUNK_SIZE),
-    uploadedChunks: new Set(upload.uploaded_parts || []),
-    status: 'pending' as const,
-    createdAt: new Date(upload.date_created).getTime(),
-    lastActivity: new Date(upload.date_created).getTime(),
-  }))
+  // Convert API response to our internal format and filter out running uploads
+  return (data.uploads || [])
+    .filter((upload: any) => !runningUploads.has(upload.file_id))
+    .map((upload: any) => ({
+      id: upload.file_id,
+      uploadId: upload.file_id,
+      fileName: upload.file,
+      fileSize: upload.size,
+      chunkSize: DEFAULT_CHUNK_SIZE, // Default as API doesn't provide this
+      totalChunks: Math.ceil(upload.size / DEFAULT_CHUNK_SIZE),
+      uploadedChunks: new Set(upload.uploaded_parts || []),
+      status: 'pending' as const,
+      createdAt: new Date(upload.date_created).getTime(),
+      lastActivity: new Date(upload.date_created).getTime(),
+    }))
 }
 
 // Utility functions
@@ -250,4 +328,36 @@ export function formatUploadTime(timestamp: number): string {
   } else {
     return 'Just now'
   }
+}
+
+// File verification utilities for retry
+export function verifyFileForRetry(file: File, incompleteUpload: MultipartUpload): boolean {
+  return (
+    file.name === incompleteUpload.fileName &&
+    file.size === incompleteUpload.fileSize
+  )
+}
+
+export async function promptFileSelection(accept?: string): Promise<File | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = accept || '*/*'
+    input.style.display = 'none'
+    
+    input.onchange = (event) => {
+      const target = event.target as HTMLInputElement
+      const file = target.files?.[0]
+      document.body.removeChild(input)
+      resolve(file || null)
+    }
+    
+    input.oncancel = () => {
+      document.body.removeChild(input)
+      resolve(null)
+    }
+    
+    document.body.appendChild(input)
+    input.click()
+  })
 }

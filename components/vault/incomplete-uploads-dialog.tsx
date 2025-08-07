@@ -73,10 +73,19 @@ export function IncompleteUploadsDialog({
     }
   }, [open])
 
-  const handleAbort = (upload: MultipartUpload) => {
-    onAbortUpload(upload)
-    removeIncompleteUpload(upload.id)
-    loadUploads()
+  const handleAbort = async (upload: MultipartUpload) => {
+    try {
+      // Call the abort handler which sends API request
+      await onAbortUpload(upload)
+      
+      // Refresh the uploads list after successful abort
+      await loadUploads()
+    } catch (error) {
+      console.error("Failed to abort upload:", error)
+      // Still remove from local storage and refresh even if API call fails
+      removeIncompleteUpload(upload.id)
+      await loadUploads()
+    }
   }
 
   const handleRetry = (upload: MultipartUpload) => {
