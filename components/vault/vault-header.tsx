@@ -5,8 +5,9 @@ import type React from "react"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { VaultSettings } from "./vault-settings"
+import { IncompleteUploadsDialog } from "./incomplete-uploads-dialog"
 import { FolderOpen, Upload, LogOut, Crown, Users, CheckSquare, X } from "lucide-react"
-import type { UserType } from "@/types"
+import type { UserType, MultipartUpload } from "@/types"
 
 interface VaultHeaderProps {
   vaultName: string
@@ -20,6 +21,8 @@ interface VaultHeaderProps {
   onLogout: () => void
   onVaultRenamed?: (newName: string) => void
   onVaultDeleted?: () => void
+  onRetryMultipartUpload?: (upload: MultipartUpload) => void
+  onAbortMultipartUpload?: (upload: MultipartUpload) => void
 }
 
 export function VaultHeader({
@@ -34,6 +37,8 @@ export function VaultHeader({
   onLogout,
   onVaultRenamed,
   onVaultDeleted,
+  onRetryMultipartUpload,
+  onAbortMultipartUpload,
 }: VaultHeaderProps) {
   return (
     <>
@@ -66,6 +71,10 @@ export function VaultHeader({
             <ThemeToggle />
             {userType === "owner" && (
               <>
+                <IncompleteUploadsDialog 
+                  onRetryUpload={onRetryMultipartUpload || (() => {})}
+                  onAbortUpload={onAbortMultipartUpload || (() => {})}
+                />
                 <Button
                   onClick={() => document.getElementById("file-input")?.click()}
                   className="bg-gray-900 dark:bg-gray-100 hover:bg-gray-800 dark:hover:bg-gray-200 text-white dark:text-gray-900 flex-1 sm:flex-none"
