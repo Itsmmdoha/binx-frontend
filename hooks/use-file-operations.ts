@@ -23,7 +23,11 @@ interface BulkDeleteDialogState {
   fileNames: string[]
 }
 
-export function useFileOperations(fetchVaultData: (token: string) => void, clearAuthAndRedirect: () => void) {
+export function useFileOperations(
+  fetchVaultData: (token: string) => void, 
+  clearAuthAndRedirect: () => void,
+  clearSelectionMode?: () => void
+) {
   const [renameDialog, setRenameDialog] = useState<RenameDialogState>({
     open: false,
     file: null,
@@ -293,6 +297,12 @@ export function useFileOperations(fetchVaultData: (token: string) => void, clear
       })
 
       setBulkDeleteDialog({ open: false, fileIds: [], fileNames: [] })
+      
+      // Clear selection mode after successful bulk delete
+      if (clearSelectionMode) {
+        clearSelectionMode()
+      }
+      
       fetchVaultData(token)
     } catch (error) {
       console.error("Bulk delete error:", error)
@@ -302,7 +312,7 @@ export function useFileOperations(fetchVaultData: (token: string) => void, clear
         variant: "destructive",
       })
     }
-  }, [bulkDeleteDialog, fetchVaultData, clearAuthAndRedirect])
+  }, [bulkDeleteDialog, fetchVaultData, clearAuthAndRedirect, clearSelectionMode])
 
   const handleVisibilityChange = useCallback(async () => {
     if (!visibilityDialog.file || !visibilityDialog.visibility) return
