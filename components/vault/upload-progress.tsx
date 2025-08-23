@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { X, ChevronUp, ChevronDown, Check, AlertCircle, XCircle, AlertTriangle, Pause, Play } from "lucide-react"
+import { X, ChevronUp, ChevronDown, Check, Pause, Play, RotateCcw } from "lucide-react"
 import { getFileIcon, getFileIconColor } from "@/utils/fileIcons"
 
 interface FileUploadInfo {
@@ -32,8 +32,10 @@ interface UploadProgressProps {
   uploadSummary: UploadSummary
   onToggleDetailed: () => void
   onCancel: () => void
+  onCancelFile?: (fileInfo: FileUploadInfo) => void
   onPause?: (uploadId?: string) => void
   onResume?: (uploadId?: string) => void
+  onRetryMultipart?: (fileInfo: FileUploadInfo) => void
 }
 
 export function UploadProgress({
@@ -44,8 +46,10 @@ export function UploadProgress({
   uploadSummary,
   onToggleDetailed,
   onCancel,
+  onCancelFile,
   onPause,
   onResume,
+  onRetryMultipart,
 }: UploadProgressProps) {
   if (!isUploading || uploadQueue.length === 0) {
     return null
@@ -60,24 +64,22 @@ export function UploadProgress({
       file.status === "size-exceeded",
   )
 
-  // Check if there are any successful uploads
-  const hasCompletedUploads = uploadQueue.some((file) => file.status === "completed")
+  // Check if there are any paused uploads
+  const hasPausedUploads = uploadQueue.some((file) => file.status === "paused")
+  const hasActiveUploads = uploadQueue.some((file) => file.status === "uploading")
 
   return (
-    <div className="fixed bottom-4 right-4 left-4 sm:left-auto sm:right-6 sm:w-80 bg-white dark:bg-gray-800 rounded-lg p-4 shadow-lg border dark:border-gray-700 z-50 animate-in slide-in-from-bottom-4 duration-300">
+    <div className="fixed bottom-4 right-4 left-4 sm:left-auto sm:right-6 sm:w-96 bg-white dark:bg-gray-800 rounded-lg shadow-lg border dark:border-gray-700 z-50 animate-in slide-in-from-bottom-4 duration-300">
       {!showDetailedProgress ? (
-        // Simple View - Current uploading file or completion status
-        <div className="space-y-3">
+        <div className="p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="font-medium text-sm text-gray-900 dark:text-gray-100">
-              {allUploadsComplete ? "Upload Complete" : "Uploading Files"}
-            </h3>
+            <h3 className="font-medium text-gray-900 dark:text-gray-100">Upload Progress</h3>
             <div className="flex items-center space-x-2">
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={onToggleDetailed}
-                className="h-6 w-6 p-0 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                className="h-6 w-6 p-0 hover:bg-gray-100 dark:hover:bg-gray-700"
               >
                 <ChevronUp className="w-4 h-4" />
               </Button>
@@ -85,81 +87,70 @@ export function UploadProgress({
                 variant="ghost"
                 size="sm"
                 onClick={onCancel}
-                className="h-6 w-6 p-0 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                className="h-6 w-6 p-0 hover:bg-gray-100 dark:hover:bg-gray-700"
               >
                 <X className="w-4 h-4" />
               </Button>
             </div>
           </div>
 
-          {/* Current uploading file or completion status */}
-          {currentUploadingFile ? (
-            <div className="space-y-2">
-              <div className="flex items-center space-x-2">
-                {(() => {
-                  const FileIcon = getFileIcon(currentUploadingFile.file.name)
-                  const iconColor = getFileIconColor(currentUploadingFile.file.name)
-                  return <FileIcon className={`w-4 h-4 ${iconColor} flex-shrink-0`} />
-                })()}
-                <span
-                  className="text-sm truncate flex-1 text-gray-900 dark:text-gray-100"
-                  title={currentUploadingFile.file.name}
-                >
-                  {currentUploadingFile.file.name}
-                </span>
-                {currentUploadingFile.status === "uploading" ? (
-                  <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
-                ) : currentUploadingFile.status === "paused" ? (
-                  <Pause className="w-4 h-4 text-yellow-600 flex-shrink-0" />
-                ) : null}
+          {/* Current uploading file */}
+          {currentUploadingFile && (
+            <div className="flex items-center space-x-3">
+              {(() => {
+                const FileIcon = getFileIcon(currentUploadingFile.file.name)
+                const iconColor = getFileIconColor(currentUploadingFile.file.name)
+                return <FileIcon className={`w-5 h-5 ${iconColor} flex-shrink-0`} />
+              })()}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-medium truncate text-gray-900 dark:text-gray-100">
+                    {currentUploadingFile.file.name}
+                  </span>
+                  <span className="text-sm text-gray-600 dark:text-gray-400 ml-2">
+                    {currentUploadingFile.progress}%
+                  </span>
+                </div>
+                <Progress value={currentUploadingFile.progress} className="h-2" />
               </div>
-              <Progress value={currentUploadingFile.progress} className="h-2 transition-all duration-150" />
-              {currentUploadingFile.status === "paused" && (
-                <p className="text-xs text-yellow-600 dark:text-yellow-400">Upload paused</p>
-              )}
-            </div>
-          ) : allUploadsComplete && hasCompletedUploads ? (
-            // Show completion status
-            <div className="text-center py-2">
-              <div className="w-6 h-6 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center mx-auto mb-2">
-                <Check className="w-4 h-4 text-green-600 dark:text-green-400" />
-              </div>
-              <p className="text-sm text-gray-900 dark:text-gray-100">
-                {uploadSummary.completed} file{uploadSummary.completed !== 1 ? "s" : ""} uploaded successfully
-              </p>
-              {uploadSummary.failed > 0 && (
-                <p className="text-xs text-red-600 dark:text-red-400 mt-1">{uploadSummary.failed} failed</p>
-              )}
-            </div>
-          ) : (
-            // Show processing state only when there are pending uploads
-            <div className="text-center py-2">
-              <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Preparing upload...</p>
             </div>
           )}
 
-          {/* Summary */}
-          <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400 pt-2 border-t dark:border-gray-700">
-            <span>
-              {uploadSummary.completed} of {uploadSummary.uploadable} completed
+          {/* Summary and controls */}
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-600 dark:text-gray-400">
+              {uploadSummary.completed} completed, {uploadSummary.failed} failed
             </span>
-            <span>{uploadSummary.total} total files</span>
+            <div className="flex items-center space-x-2">
+              {(hasActiveUploads || hasPausedUploads) && (
+                <>
+                  {hasActiveUploads && onPause && (
+                    <Button variant="outline" size="sm" onClick={() => onPause()} className="h-8 px-3 text-xs">
+                      <Pause className="w-3 h-3 mr-1" />
+                      Pause
+                    </Button>
+                  )}
+                  {hasPausedUploads && onResume && (
+                    <Button variant="outline" size="sm" onClick={() => onResume()} className="h-8 px-3 text-xs">
+                      <Play className="w-3 h-3 mr-1" />
+                      Resume
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         </div>
       ) : (
-        // Detailed View - All files with scrolling
-        <div className="space-y-3">
+        <div className="p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="font-medium text-sm text-gray-900 dark:text-gray-100">
-              {allUploadsComplete ? "Upload Complete" : "Upload Progress"}
-            </h3>
+            <h3 className="font-medium text-gray-900 dark:text-gray-100">Upload Progress</h3>
             <div className="flex items-center space-x-2">
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={onToggleDetailed}
-                className="h-6 w-6 p-0 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                className="h-6 w-6 p-0 hover:bg-gray-100 dark:hover:bg-gray-700"
               >
                 <ChevronDown className="w-4 h-4" />
               </Button>
@@ -167,99 +158,102 @@ export function UploadProgress({
                 variant="ghost"
                 size="sm"
                 onClick={onCancel}
-                className="h-6 w-6 p-0 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                className="h-6 w-6 p-0 hover:bg-gray-100 dark:hover:bg-gray-700"
               >
                 <X className="w-4 h-4" />
               </Button>
             </div>
           </div>
 
-          {/* Scrollable file list */}
-          <div className="space-y-2 max-h-48 overflow-y-auto">
+          <div
+            className="space-y-2 max-h-64 overflow-y-auto scrollbar-hide"
+            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+          >
+            <style jsx>{`
+              .scrollbar-hide::-webkit-scrollbar {
+                display: none;
+              }
+            `}</style>
             {uploadQueue.map((fileInfo, index) => {
               const FileIcon = getFileIcon(fileInfo.file.name)
               const iconColor = getFileIconColor(fileInfo.file.name)
 
               return (
-                <div key={index} className="space-y-1">
-                  <div className="flex items-center space-x-2">
-                    <FileIcon className={`w-4 h-4 ${iconColor} flex-shrink-0`} />
-                    <span
-                      className="text-xs truncate flex-1 text-gray-900 dark:text-gray-100"
-                      title={fileInfo.file.name}
-                    >
-                      {fileInfo.file.name}
-                    </span>
-                    <div className="flex-shrink-0">
-                      {fileInfo.status === "completed" && <Check className="w-3 h-3 text-green-600" />}
-                      {fileInfo.status === "failed" && <AlertCircle className="w-3 h-3 text-red-600" />}
-                      {fileInfo.status === "cancelled" && <XCircle className="w-3 h-3 text-gray-500" />}
-                      {fileInfo.status === "size-exceeded" && <AlertTriangle className="w-3 h-3 text-orange-600" />}
-                      {fileInfo.status === "paused" && <Pause className="w-3 h-3 text-yellow-600" />}
-                      {fileInfo.status === "uploading" && (
-                        <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                      )}
-                      {fileInfo.status === "pending" && (
-                        <div className="w-3 h-3 border-2 border-gray-300 dark:border-gray-600 rounded-full"></div>
-                      )}
+                <div key={index} className="flex items-center space-x-3 py-2">
+                  <FileIcon className={`w-5 h-5 ${iconColor} flex-shrink-0`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-medium truncate text-gray-900 dark:text-gray-100">
+                        {fileInfo.file.name}
+                      </span>
+                      <div className="flex items-center space-x-2">
+                        {fileInfo.status === "completed" && <Check className="w-4 h-4 text-green-600 flex-shrink-0" />}
+                        {fileInfo.status === "failed" && (
+                          <div className="flex items-center space-x-1">
+                            <span className="text-xs text-red-600">failed</span>
+                            {fileInfo.multipartUpload && onRetryMultipart && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => onRetryMultipart(fileInfo)}
+                                className="h-5 w-5 p-0 hover:bg-gray-100 dark:hover:bg-gray-700"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                        {fileInfo.status === "uploading" && (
+                          <span className="text-xs text-blue-600 flex-shrink-0">{fileInfo.progress}%</span>
+                        )}
+                        {fileInfo.status === "paused" && <Pause className="w-4 h-4 text-yellow-600 flex-shrink-0" />}
+                        {(fileInfo.status === "uploading" ||
+                          fileInfo.status === "paused" ||
+                          fileInfo.status === "pending") &&
+                          onCancelFile && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => onCancelFile(fileInfo)}
+                              className="h-5 w-5 p-0 hover:bg-gray-100 dark:hover:bg-gray-700"
+                            >
+                              <X className="w-3 h-3" />
+                            </Button>
+                          )}
+                      </div>
                     </div>
-                  </div>
-
-                  {(fileInfo.status === "uploading" || fileInfo.status === "paused") && (
-                    <Progress value={fileInfo.progress} className="h-1 transition-all duration-150" />
-                  )}
-
-                  {/* Pause/Resume controls for multipart uploads */}
-                  {fileInfo.multipartUpload && (fileInfo.status === "uploading" || fileInfo.status === "paused") && (
-                    <div className="flex space-x-2 mt-2 pl-6">
-                      {fileInfo.status === "uploading" && onPause && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => onPause(fileInfo.multipartUpload?.id)}
-                          className="h-6 text-xs px-2"
-                        >
-                          <Pause className="w-3 h-3 mr-1" />
-                          Pause
-                        </Button>
-                      )}
-                      {fileInfo.status === "paused" && onResume && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => onResume(fileInfo.multipartUpload?.id)}
-                          className="h-6 text-xs px-2"
-                        >
-                          <Play className="w-3 h-3 mr-1" />
-                          Resume
-                        </Button>
-                      )}
-                    </div>
-                  )}
-
-                  {(fileInfo.status === "failed" ||
-                    fileInfo.status === "cancelled" ||
-                    fileInfo.status === "size-exceeded") &&
-                    fileInfo.error && (
-                      <p className="text-xs text-red-600 dark:text-red-400 break-words pl-6">{fileInfo.error}</p>
+                    {(fileInfo.status === "uploading" || fileInfo.status === "paused") && (
+                      <Progress value={fileInfo.progress} className="h-1" />
                     )}
+                    {fileInfo.error && (
+                      <p className="text-xs text-red-600 dark:text-red-400 mt-1 break-words">{fileInfo.error}</p>
+                    )}
+                  </div>
                 </div>
               )
             })}
           </div>
 
-          {/* Summary */}
           <div className="pt-2 border-t dark:border-gray-700">
-            <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-400">
-              <span>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-600 dark:text-gray-400">
                 {uploadSummary.completed} completed, {uploadSummary.failed} failed
               </span>
-            </div>
-            {uploadSummary.sizeExceeded > 0 && (
-              <div className="text-xs text-orange-600 dark:text-orange-400 mt-1">
-                {uploadSummary.sizeExceeded} file(s) exceed storage capacity
+              <div className="flex items-center space-x-2">
+                {hasActiveUploads && onPause && (
+                  <Button variant="outline" size="sm" onClick={() => onPause()} className="h-8 px-3 text-xs">
+                    <Pause className="w-3 h-3 mr-1" />
+                    Pause
+                  </Button>
+                )}
+                {hasPausedUploads && onResume && (
+                  <Button variant="outline" size="sm" onClick={() => onResume()} className="h-8 px-3 text-xs">
+                    <Play className="w-3 h-3 mr-1" />
+                    Resume
+                  </Button>
+                )}
               </div>
-            )}
+            </div>
           </div>
         </div>
       )}

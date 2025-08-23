@@ -41,7 +41,7 @@ This document outlines the multipart upload feature implementation for the Binx 
 
 ### File Structure
 
-```
+\`\`\`
 utils/
 ├── multipart-upload.ts        # Core multipart upload utilities
 ├── test-multipart-upload.ts   # Test utilities (development)
@@ -56,7 +56,7 @@ hooks/
 
 types/
 ├── index.ts                     # Added multipart upload types
-```
+\`\`\`
 
 ### Key Components
 
@@ -91,7 +91,7 @@ types/
 
 The implementation assumes the following API endpoints (standard multipart upload pattern):
 
-```typescript
+\`\`\`typescript
 POST /file/multipart/initiate
 - Initiates multipart upload
 - Returns uploadId and chunkSize
@@ -110,17 +110,17 @@ POST /file/multipart/abort
 - Aborts incomplete multipart upload
 - Requires uploadId
 - Cleans up server-side resources
-```
+\`\`\`
 
 ### Configuration
 
 Key configuration values in `utils/multipart-upload.ts`:
 
-```typescript
+\`\`\`typescript
 export const MULTIPART_THRESHOLD = 20 * 1024 * 1024 // 20MB
 export const DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024   // 5MB
 export const STORAGE_KEY = "binx_incomplete_uploads"
-```
+\`\`\`
 
 ## Usage
 
