@@ -41,6 +41,7 @@ export default function VaultPage() {
     setShowDetailedProgress,
     handleFileUpload,
     cancelUpload,
+    cancelSingleUpload,
     pauseUpload,
     resumeUpload,
     retryMultipartUpload,
@@ -165,6 +166,7 @@ export default function VaultPage() {
         uploadSummary={getUploadSummary()}
         onToggleDetailed={() => setShowDetailedProgress(!showDetailedProgress)}
         onCancel={cancelUpload}
+        onCancelFile={cancelSingleUpload}
         onPause={pauseUpload}
         onResume={resumeUpload}
       />
