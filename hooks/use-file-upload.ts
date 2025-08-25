@@ -32,7 +32,7 @@ interface FileUploadInfo {
   error?: string
   xhr?: XMLHttpRequest
   multipartUpload?: MultipartUpload
-  pauseResolve?: () => void
+  pauseResolve?: (value?: unknown) => void
 }
 
 export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (token: string) => void) {
@@ -687,10 +687,10 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
         const chunks = createChunks(selectedFile, incompleteUpload.chunkSize)
 
         // Update the incomplete upload with latest info from server
-        const updatedUpload = {
+        const updatedUpload: MultipartUpload = {
           ...incompleteUpload,
           uploadedChunks: latestUploadInfo.uploadedChunks,
-          status: "uploading" as const,
+          status: "uploading",
         }
 
         // Create file info for the retry
