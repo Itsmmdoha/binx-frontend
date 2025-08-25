@@ -2,16 +2,37 @@
 
 import type React from "react"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useRef } from "react"
 import { formatFileSize } from "@/utils"
-import type { VaultData } from "@/types"
+import { toast } from "@/components/ui/use-toast"
+import type { VaultData, MultipartUpload } from "@/types"
+import {
+  shouldUseMultipart,
+  createChunks,
+  generateUploadId,
+  initiateMultipartUpload,
+  uploadChunk,
+  completeMultipartUpload,
+  abortMultipartUpload,
+  saveIncompleteUpload,
+  removeIncompleteUpload,
+  calculateUploadProgress,
+  getIncompleteUploadsFromAPI,
+  addRunningUpload,
+  removeRunningUpload,
+  promptFileSelection,
+  verifyFileForRetry,
+  DEFAULT_CHUNK_SIZE,
+} from "@/utils/multipart-upload"
 
 interface FileUploadInfo {
   file: File
-  status: "pending" | "uploading" | "completed" | "failed" | "cancelled" | "size-exceeded"
+  status: "pending" | "uploading" | "completed" | "failed" | "cancelled" | "size-exceeded" | "paused"
   progress: number
   error?: string
   xhr?: XMLHttpRequest
+  multipartUpload?: MultipartUpload
+  pauseResolve?: (value?: unknown) => void
 }
 
 export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (token: string) => void) {
@@ -20,6 +41,9 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
   const [currentUploadIndex, setCurrentUploadIndex] = useState(-1)
   const [uploadCancelled, setUploadCancelled] = useState(false)
   const [showDetailedProgress, setShowDetailedProgress] = useState(false)
+  const [batchPaused, setBatchPaused] = useState(false) // Added batch pause state to control sequential upload flow
+  const batchPausedRef = useRef(false) // Ref to access current pause state in running async functions
+  const activeUploadsRef = useRef<Map<string, { abort: () => void; pause: () => void; resume: () => void }>>(new Map())
 
   const checkStorageCapacity = useCallback(
     (filesToUpload: File[]): { canUpload: boolean; exceedsStorage: File[] } => {
@@ -43,6 +67,194 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
       }
     },
     [vaultData],
+  )
+
+  const uploadFileWithMultipart = useCallback(
+    async (fileInfo: FileUploadInfo, token: string): Promise<void> => {
+      const { file } = fileInfo
+
+      try {
+        // Create multipart upload record
+        const uploadId = generateUploadId()
+        const chunks = createChunks(file, DEFAULT_CHUNK_SIZE)
+
+        const multipartUpload: MultipartUpload = {
+          id: uploadId,
+          uploadId,
+          fileName: file.name,
+          fileSize: file.size,
+          chunkSize: DEFAULT_CHUNK_SIZE,
+          totalChunks: chunks.length,
+          uploadedChunks: new Set(),
+          status: "pending",
+          createdAt: Date.now(),
+          lastActivity: Date.now(),
+        }
+
+        // Update file info with multipart upload
+        setUploadQueue((prev) =>
+          prev.map((item) => (item.file === file ? { ...item, multipartUpload, status: "uploading" as const } : item)),
+        )
+
+        // Save to local storage
+        saveIncompleteUpload(multipartUpload)
+
+        // Initiate multipart upload with API
+        const initResponse = await initiateMultipartUpload(file.name, file.size, token)
+
+        // Update with actual file ID from API
+        multipartUpload.uploadId = initResponse.file_id
+
+        // Use the API file_id for all subsequent operations
+        const fileId = initResponse.file_id
+        saveIncompleteUpload(multipartUpload)
+
+        // Add to running uploads tracking
+        addRunningUpload(fileId)
+
+        let isPaused = false
+        let isAborted = false
+
+        const uploadControls = {
+          abort: () => {
+            isAborted = true
+            abortMultipartUpload(fileId, token).catch(console.error)
+            removeIncompleteUpload(multipartUpload.id)
+            removeRunningUpload(fileId)
+          },
+          pause: () => {
+            isPaused = true
+            multipartUpload.status = "paused"
+            saveIncompleteUpload(multipartUpload)
+          },
+          resume: () => {
+            isPaused = false
+            multipartUpload.status = "uploading"
+            saveIncompleteUpload(multipartUpload)
+          },
+        }
+
+        activeUploadsRef.current.set(uploadId, uploadControls)
+
+        // Upload chunks sequentially
+        for (let i = 0; i < chunks.length; i++) {
+          if (isAborted || uploadCancelled) break
+
+          // Wait if paused
+          while (isPaused && !isAborted && !uploadCancelled) {
+            await new Promise((resolve) => {
+              fileInfo.pauseResolve = resolve
+              setTimeout(resolve, 1000) // Check every second
+            })
+          }
+
+          if (isAborted || uploadCancelled) break
+
+          const chunk = chunks[i]
+
+          try {
+            const chunkResponse = await uploadChunk(fileId, chunk.chunkNumber, chunk.data, token, (loaded, total) => {
+              const chunkProgress = (loaded / total) * 100
+              const overallProgress = Math.round(
+                ((multipartUpload.uploadedChunks.size + chunkProgress / 100) / multipartUpload.totalChunks) * 100,
+              )
+
+              setUploadQueue((prev) =>
+                prev.map((item) => (item.file === file ? { ...item, progress: overallProgress } : item)),
+              )
+            })
+
+            // Mark chunk as completed
+            multipartUpload.uploadedChunks.add(chunk.chunkNumber)
+            multipartUpload.lastActivity = Date.now()
+
+            // Update progress
+            const progress = calculateUploadProgress(multipartUpload.uploadedChunks, multipartUpload.totalChunks)
+
+            setUploadQueue((prev) => prev.map((item) => (item.file === file ? { ...item, progress } : item)))
+
+            // Save progress
+            saveIncompleteUpload(multipartUpload)
+          } catch (error) {
+            if (isAborted || uploadCancelled) break
+
+            multipartUpload.status = "failed"
+            multipartUpload.error = error instanceof Error ? error.message : "Chunk upload failed"
+            saveIncompleteUpload(multipartUpload)
+
+            setUploadQueue((prev) =>
+              prev.map((item) =>
+                item.file === file ? { ...item, status: "failed" as const, error: multipartUpload.error } : item,
+              ),
+            )
+
+            throw error
+          }
+        }
+
+        if (!isAborted && !uploadCancelled) {
+          // Complete multipart upload
+          try {
+            const completeResponse = await completeMultipartUpload(fileId, token)
+
+            // Mark as completed
+            multipartUpload.status = "completed"
+            removeIncompleteUpload(multipartUpload.id)
+            removeRunningUpload(fileId)
+
+            setUploadQueue((prev) =>
+              prev.map((item) =>
+                item.file === file ? { ...item, status: "completed" as const, progress: 100 } : item,
+              ),
+            )
+          } catch (completionError) {
+            const errorMessage = completionError instanceof Error ? completionError.message : "Upload completion failed"
+            const status = (completionError as any)?.status
+
+            multipartUpload.status = "failed"
+            multipartUpload.error = errorMessage
+
+            // Keep the upload data for retry if it's a non-200 response
+            if (status && status !== 200) {
+              saveIncompleteUpload(multipartUpload)
+            } else {
+              removeIncompleteUpload(multipartUpload.id)
+            }
+
+            removeRunningUpload(fileId)
+
+            setUploadQueue((prev) =>
+              prev.map((item) =>
+                item.file === file ? { ...item, status: "failed" as const, error: errorMessage } : item,
+              ),
+            )
+          }
+        }
+
+        activeUploadsRef.current.delete(uploadId)
+      } catch (error) {
+        activeUploadsRef.current.delete(fileInfo.multipartUpload?.id || "")
+
+        const errorMessage = error instanceof Error ? error.message : "Multipart upload failed"
+
+        setUploadQueue((prev) =>
+          prev.map((item) =>
+            item.file === file ? { ...item, status: "failed" as const, error: errorMessage, progress: 0 } : item,
+          ),
+        )
+
+        if (fileInfo.multipartUpload) {
+          fileInfo.multipartUpload.status = "failed"
+          fileInfo.multipartUpload.error = errorMessage
+          saveIncompleteUpload(fileInfo.multipartUpload)
+          // Remove from running uploads on error
+          removeRunningUpload(fileInfo.multipartUpload.uploadId)
+        }
+
+        throw error
+      }
+    },
+    [uploadCancelled],
   )
 
   const uploadFileWithProgress = useCallback((fileInfo: FileUploadInfo, token: string): Promise<void> => {
@@ -162,6 +374,32 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
           break
         }
 
+        while (batchPausedRef.current && !uploadCancelled) {
+          // Mark pending files as paused
+          setUploadQueue((prev) =>
+            prev.map((item) => {
+              const itemIndex = prev.findIndex((prevItem) => prevItem.file === item.file)
+              const currentIndex = prev.findIndex((prevItem) => prevItem.file === fileInfos[i].file)
+              return itemIndex >= currentIndex && item.status === "pending"
+                ? { ...item, status: "paused" as const }
+                : item
+            }),
+          )
+          await new Promise((resolve) => setTimeout(resolve, 1000))
+        }
+
+        if (!batchPausedRef.current && !uploadCancelled) {
+          setUploadQueue((prev) =>
+            prev.map((item) =>
+              item.file === fileInfos[i].file && item.status === "paused"
+                ? { ...item, status: "pending" as const }
+                : item,
+            ),
+          )
+        }
+
+        if (uploadCancelled) break
+
         setCurrentUploadIndex(i)
 
         setUploadQueue((prev) =>
@@ -171,7 +409,12 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
         )
 
         try {
-          await uploadFileWithProgress(fileInfos[i], token)
+          // Check if file should use multipart upload
+          if (shouldUseMultipart(fileInfos[i].file.size)) {
+            await uploadFileWithMultipart(fileInfos[i], token)
+          } else {
+            await uploadFileWithProgress(fileInfos[i], token)
+          }
         } catch (error) {
           console.error("Upload error:", error)
           setUploadQueue((prev) =>
@@ -214,10 +457,12 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
           setCurrentUploadIndex(-1)
           setUploadCancelled(false)
           setShowDetailedProgress(false)
+          setBatchPaused(false)
+          batchPausedRef.current = false
         }, 1500) // Reduced from 5000ms to 1500ms
       }
     },
-    [uploadCancelled, uploadFileWithProgress, fetchVaultData, uploadQueue],
+    [uploadCancelled, uploadFileWithProgress, uploadFileWithMultipart, fetchVaultData, uploadQueue],
   )
 
   const handleFileUpload = useCallback(
@@ -268,11 +513,27 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
 
   const cancelUpload = useCallback(() => {
     setUploadCancelled(true)
+    setBatchPaused(false)
+    batchPausedRef.current = false
+
+    // Cancel all active multipart uploads
+    activeUploadsRef.current.forEach((controls, uploadId) => {
+      try {
+        controls.abort()
+      } catch (error) {
+        console.error(`Failed to abort upload ${uploadId}:`, error)
+      }
+    })
+    activeUploadsRef.current.clear()
 
     setUploadQueue((prev) =>
       prev.map((item) => {
         if ((item.status === "pending" || item.status === "uploading") && item.xhr) {
-          item.xhr.abort()
+          try {
+            item.xhr.abort()
+          } catch (error) {
+            console.error(`Failed to abort XHR for ${item.file.name}:`, error)
+          }
         }
         return item.status === "pending" || item.status === "uploading"
           ? { ...item, status: "cancelled" as const, error: "Upload cancelled by user" }
@@ -286,11 +547,353 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
       setCurrentUploadIndex(-1)
       setUploadCancelled(false)
       setShowDetailedProgress(false)
-    }, 1000) // Reduced from 2000ms to 1000ms
+    }, 1000)
+  }, [])
+
+  const cancelSingleUpload = useCallback((fileInfo: FileUploadInfo) => {
+    if (fileInfo.multipartUpload) {
+      const controls = activeUploadsRef.current.get(fileInfo.multipartUpload.id)
+      if (controls) {
+        try {
+          controls.abort()
+        } catch (error) {
+          console.error(`Failed to abort multipart upload for ${fileInfo.file.name}:`, error)
+        }
+      }
+    } else if (fileInfo.xhr) {
+      try {
+        fileInfo.xhr.abort()
+      } catch (error) {
+        console.error(`Failed to abort XHR for ${fileInfo.file.name}:`, error)
+      }
+    }
+
+    setUploadQueue((prev) =>
+      prev.map((item) =>
+        item.file === fileInfo.file
+          ? { ...item, status: "cancelled" as const, error: "Upload cancelled by user" }
+          : item,
+      ),
+    )
+  }, [])
+
+  const pauseUpload = useCallback((uploadId?: string) => {
+    if (uploadId) {
+      const controls = activeUploadsRef.current.get(uploadId)
+      if (controls) {
+        controls.pause()
+      }
+    } else {
+      // Pause all active multipart uploads
+      activeUploadsRef.current.forEach((controls) => {
+        controls.pause()
+      })
+
+      // Set batch pause to prevent new uploads from starting
+      setBatchPaused(true)
+      batchPausedRef.current = true
+    }
+
+    setUploadQueue((prev) =>
+      prev.map((item) => {
+        if (item.multipartUpload && (!uploadId || item.multipartUpload.id === uploadId)) {
+          return { ...item, status: "paused" as const }
+        }
+        // For batch pause, mark pending files as paused
+        if (!uploadId && item.status === "pending") {
+          return { ...item, status: "paused" as const }
+        }
+        // For single-part uploads that are currently uploading, show as paused
+        // (they will complete but the UI reflects the pause intent)
+        if (!uploadId && item.status === "uploading" && !item.multipartUpload) {
+          return { ...item, status: "paused" as const }
+        }
+        return item
+      }),
+    )
+  }, [])
+
+  const resumeUpload = useCallback((uploadId?: string) => {
+    if (uploadId) {
+      const controls = activeUploadsRef.current.get(uploadId)
+      if (controls) {
+        controls.resume()
+      }
+    } else {
+      // Resume all paused multipart uploads
+      activeUploadsRef.current.forEach((controls) => {
+        controls.resume()
+      })
+
+      // Clear batch pause to allow new uploads to start
+      setBatchPaused(false)
+      batchPausedRef.current = false
+    }
+
+    setUploadQueue((prev) =>
+      prev.map((item) => {
+        if (item.status === "paused" && (!uploadId || item.multipartUpload?.id === uploadId)) {
+          // If it's a multipart upload, resume to uploading, otherwise back to pending
+          return {
+            ...item,
+            status: item.multipartUpload ? ("uploading" as const) : ("pending" as const),
+          }
+        }
+        return item
+      }),
+    )
+  }, [])
+
+  const retryMultipartUpload = useCallback(
+    async (incompleteUpload: MultipartUpload) => {
+      const token = localStorage.getItem("token")
+      if (!token) return
+
+      try {
+        // Prompt user to select the file again
+        const selectedFile = await promptFileSelection()
+
+        if (!selectedFile) {
+          // User cancelled file selection
+          return
+        }
+
+        // Verify the selected file matches the incomplete upload
+        if (!verifyFileForRetry(selectedFile, incompleteUpload)) {
+          toast({
+            title: "File mismatch",
+            description: `Selected file doesn't match the incomplete upload.\nExpected: ${incompleteUpload.fileName} (${incompleteUpload.fileSize} bytes)\nGot: ${selectedFile.name} (${selectedFile.size} bytes)\n\nPlease select the correct file or abort this upload.`,
+            variant: "destructive",
+          })
+          return
+        }
+
+        // Get the latest incomplete upload info from API to know which chunks are missing
+        const apiUploads = await getIncompleteUploadsFromAPI(token)
+        const latestUploadInfo = apiUploads.find((upload) => upload.uploadId === incompleteUpload.uploadId)
+
+        if (!latestUploadInfo) {
+          // Upload might have been completed or aborted
+          removeIncompleteUpload(incompleteUpload.id)
+          toast({
+            title: "Upload not found",
+            description: "Upload not found on server. It may have been completed or aborted.",
+            variant: "destructive",
+          })
+          return
+        }
+
+        // Create chunks for the selected file
+        const chunks = createChunks(selectedFile, incompleteUpload.chunkSize)
+
+        // Update the incomplete upload with latest info from server
+        const updatedUpload: MultipartUpload = {
+          ...incompleteUpload,
+          uploadedChunks: latestUploadInfo.uploadedChunks,
+          status: "uploading",
+        }
+
+        // Create file info for the retry
+        const fileInfo: FileUploadInfo = {
+          file: selectedFile,
+          status: "uploading",
+          progress: calculateUploadProgress(updatedUpload.uploadedChunks, updatedUpload.totalChunks),
+          multipartUpload: updatedUpload,
+        }
+
+        setUploadQueue([fileInfo])
+        setIsUploading(true)
+        setUploadCancelled(false)
+        setShowDetailedProgress(false)
+
+        // Add to running uploads
+        addRunningUpload(updatedUpload.uploadId)
+
+        let isPaused = false
+        let isAborted = false
+
+        const uploadControls = {
+          abort: () => {
+            isAborted = true
+            abortMultipartUpload(updatedUpload.uploadId, token).catch(console.error)
+            removeIncompleteUpload(updatedUpload.id)
+            removeRunningUpload(updatedUpload.uploadId)
+          },
+          pause: () => {
+            isPaused = true
+            updatedUpload.status = "paused"
+            saveIncompleteUpload(updatedUpload)
+          },
+          resume: () => {
+            isPaused = false
+            updatedUpload.status = "uploading"
+            saveIncompleteUpload(updatedUpload)
+          },
+        }
+
+        activeUploadsRef.current.set(updatedUpload.id, uploadControls)
+
+        // Upload only missing chunks
+        for (let i = 0; i < chunks.length; i++) {
+          const chunkNumber = i + 1
+
+          // Skip already uploaded chunks
+          if (updatedUpload.uploadedChunks.has(chunkNumber)) {
+            continue
+          }
+
+          if (isAborted || uploadCancelled) break
+
+          // Wait if paused
+          while (isPaused && !isAborted && !uploadCancelled) {
+            await new Promise((resolve) => {
+              fileInfo.pauseResolve = resolve
+              setTimeout(resolve, 1000)
+            })
+          }
+
+          if (isAborted || uploadCancelled) break
+
+          const chunk = chunks[i]
+
+          try {
+            await uploadChunk(updatedUpload.uploadId, chunk.chunkNumber, chunk.data, token, (loaded, total) => {
+              const chunkProgress = (loaded / total) * 100
+              const overallProgress = Math.round(
+                ((updatedUpload.uploadedChunks.size + chunkProgress / 100) / updatedUpload.totalChunks) * 100,
+              )
+
+              setUploadQueue((prev) =>
+                prev.map((item) =>
+                  item.multipartUpload?.id === updatedUpload.id ? { ...item, progress: overallProgress } : item,
+                ),
+              )
+            })
+
+            // Mark chunk as completed
+            updatedUpload.uploadedChunks.add(chunkNumber)
+            updatedUpload.lastActivity = Date.now()
+
+            // Update progress
+            const progress = calculateUploadProgress(updatedUpload.uploadedChunks, updatedUpload.totalChunks)
+
+            setUploadQueue((prev) =>
+              prev.map((item) => (item.multipartUpload?.id === updatedUpload.id ? { ...item, progress } : item)),
+            )
+
+            // Save progress
+            saveIncompleteUpload(updatedUpload)
+          } catch (error) {
+            if (isAborted || uploadCancelled) break
+
+            updatedUpload.status = "failed"
+            updatedUpload.error = error instanceof Error ? error.message : "Chunk upload failed"
+            saveIncompleteUpload(updatedUpload)
+            removeRunningUpload(updatedUpload.uploadId)
+
+            setUploadQueue((prev) =>
+              prev.map((item) => ({ ...item, status: "failed" as const, error: updatedUpload.error })),
+            )
+
+            throw error
+          }
+        }
+
+        if (!isAborted && !uploadCancelled) {
+          // Complete multipart upload
+          await completeMultipartUpload(updatedUpload.uploadId, token)
+
+          // Mark as completed and cleanup
+          removeIncompleteUpload(updatedUpload.id)
+          removeRunningUpload(updatedUpload.uploadId)
+
+          setUploadQueue((prev) => prev.map((item) => ({ ...item, status: "completed" as const, progress: 100 })))
+
+          // Refresh vault data
+          fetchVaultData(token)
+        }
+
+        activeUploadsRef.current.delete(updatedUpload.id)
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Failed to retry upload"
+
+        toast({
+          title: "Retry failed",
+          description: errorMessage,
+          variant: "destructive",
+        })
+
+        setUploadQueue((prev) => prev.map((item) => ({ ...item, status: "failed" as const, error: errorMessage })))
+
+        setTimeout(() => {
+          setIsUploading(false)
+          setUploadQueue([])
+        }, 3000)
+      }
+    },
+    [uploadCancelled, fetchVaultData],
+  )
+
+  const retryMultipartCompletion = useCallback(
+    async (fileInfo: FileUploadInfo) => {
+      if (!fileInfo.multipartUpload) return
+
+      const token = localStorage.getItem("token")
+      if (!token) return
+
+      try {
+        setUploadQueue((prev) =>
+          prev.map((item) =>
+            item.file === fileInfo.file ? { ...item, status: "uploading" as const, error: undefined } : item,
+          ),
+        )
+
+        // Retry the completion
+        await completeMultipartUpload(fileInfo.multipartUpload.uploadId, token)
+
+        // Mark as completed and cleanup
+        removeIncompleteUpload(fileInfo.multipartUpload.id)
+        removeRunningUpload(fileInfo.multipartUpload.uploadId)
+
+        setUploadQueue((prev) =>
+          prev.map((item) =>
+            item.file === fileInfo.file
+              ? { ...item, status: "completed" as const, progress: 100, error: undefined }
+              : item,
+          ),
+        )
+
+        // Refresh vault data
+        fetchVaultData(token)
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Retry failed"
+
+        setUploadQueue((prev) =>
+          prev.map((item) =>
+            item.file === fileInfo.file ? { ...item, status: "failed" as const, error: errorMessage } : item,
+          ),
+        )
+      }
+    },
+    [fetchVaultData],
+  )
+
+  const abortMultipartUploadHandler = useCallback(async (incompleteUpload: MultipartUpload) => {
+    const token = localStorage.getItem("token")
+    if (!token) return
+
+    try {
+      await abortMultipartUpload(incompleteUpload.uploadId, token)
+      removeIncompleteUpload(incompleteUpload.id)
+    } catch (error) {
+      console.error("Failed to abort multipart upload:", error)
+      // Still remove from local storage even if API call fails
+      removeIncompleteUpload(incompleteUpload.id)
+    }
   }, [])
 
   const getCurrentUploadingFile = useCallback(() => {
-    return uploadQueue.find((file) => file.status === "uploading") || null
+    return uploadQueue.find((file) => file.status === "uploading" || file.status === "paused") || null
   }, [uploadQueue])
 
   const getUploadSummary = useCallback(() => {
@@ -310,6 +913,12 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
     setShowDetailedProgress,
     handleFileUpload,
     cancelUpload,
+    cancelSingleUpload, // Added individual file cancellation
+    pauseUpload,
+    resumeUpload,
+    retryMultipartUpload,
+    retryMultipartCompletion, // Added completion retry functionality
+    abortMultipartUpload: abortMultipartUploadHandler,
     getCurrentUploadingFile,
     getUploadSummary,
   }

@@ -41,6 +41,10 @@ export default function VaultPage() {
     setShowDetailedProgress,
     handleFileUpload,
     cancelUpload,
+    pauseUpload,
+    resumeUpload,
+    retryMultipartUpload,
+    abortMultipartUpload: abortMultipartUploadHandler,
     getCurrentUploadingFile,
     getUploadSummary,
   } = useFileUpload(vaultData, fetchVaultData)
@@ -61,7 +65,7 @@ export default function VaultPage() {
     setDeleteDialog,
     setBulkDeleteDialog,
     setVisibilityDialog,
-  } = useFileOperations(fetchVaultData, clearAuthAndRedirect)
+  } = useFileOperations(fetchVaultData, clearAuthAndRedirect, clearSelection)
 
   useEffect(() => {
     const token = localStorage.getItem("token")
@@ -69,7 +73,7 @@ export default function VaultPage() {
     const vault = localStorage.getItem("vaultName")
 
     if (!token || !type || !vault) {
-      router.push("/login")
+      router.push("/login/")
       return
     }
 
@@ -126,6 +130,8 @@ export default function VaultPage() {
         onLogout={handleLogout}
         onVaultRenamed={handleVaultRenamed}
         onVaultDeleted={handleVaultDeleted}
+        onRetryMultipartUpload={retryMultipartUpload}
+        onAbortMultipartUpload={abortMultipartUploadHandler}
       />
 
       <div className="p-6">
@@ -138,6 +144,7 @@ export default function VaultPage() {
           selectedFiles={selectedFiles}
           searchQuery={searchQuery}
           sortOption={sortOption}
+          vaultName={vaultName}
           onSearchChange={setSearchQuery}
           onSortChange={setSortOption}
           onFileSelect={toggleFileSelection}
@@ -158,6 +165,8 @@ export default function VaultPage() {
         uploadSummary={getUploadSummary()}
         onToggleDetailed={() => setShowDetailedProgress(!showDetailedProgress)}
         onCancel={cancelUpload}
+        onPause={pauseUpload}
+        onResume={resumeUpload}
       />
 
       <FileDialogs

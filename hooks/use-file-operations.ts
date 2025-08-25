@@ -1,66 +1,225 @@
 "use client"
 
-import { useState } from "react"
-import { useToast } from "./use-toast"
+import { useState, useCallback } from "react"
+import { toast } from "@/hooks/use-toast"
+import type { FileData } from "@/types"
 
-export interface FileOperation {
-  id: string
-  name: string
-  size: number
-  visibility: "public" | "private"
-  date_created: string
+interface DialogState {
+  open: boolean
+  file: FileData | null
 }
 
-export function useFileOperations(token: string) {
-  const [isLoading, setIsLoading] = useState(false)
-  const { toast } = useToast()
+interface RenameDialogState extends DialogState {
+  newName: string
+}
 
-  const handleDownload = async (fileId: string, fileName: string) => {
+interface VisibilityDialogState extends DialogState {
+  visibility: string
+}
+
+interface BulkDeleteDialogState {
+  open: boolean
+  fileIds: string[]
+  fileNames: string[]
+}
+
+export function useFileOperations(
+  fetchVaultData: (token: string) => void, 
+  clearAuthAndRedirect: () => void,
+  clearSelectionMode?: () => void
+) {
+  const [renameDialog, setRenameDialog] = useState<RenameDialogState>({
+    open: false,
+    file: null,
+    newName: "",
+  })
+
+  const [deleteDialog, setDeleteDialog] = useState<DialogState>({
+    open: false,
+    file: null,
+  })
+
+  const [bulkDeleteDialog, setBulkDeleteDialog] = useState<BulkDeleteDialogState>({
+    open: false,
+    fileIds: [],
+    fileNames: [],
+  })
+
+  const [visibilityDialog, setVisibilityDialog] = useState<VisibilityDialogState>({
+    open: false,
+    file: null,
+    visibility: "",
+  })
+
+  const getApiUrl = () => {
+    const baseUrl = process.env.NEXT_PUBLIC_BINX_API_URL
+    if (!baseUrl) {
+      throw new Error("NEXT_PUBLIC_BINX_API_URL environment variable is not set")
+    }
+    return baseUrl
+  }
+
+  // iOS-compatible clipboard function
+  const copyToClipboard = async (text: string): Promise<boolean> => {
+    // Try modern clipboard API first
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(text)
+        return true
+      } catch (err) {
+        console.warn("Clipboard API failed, trying fallback:", err)
+      }
+    }
+
+    // Fallback for iOS and other browsers
     try {
-      setIsLoading(true)
-      const response = await fetch(`/file/${fileId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
+      // Create a temporary textarea element
+      const textArea = document.createElement("textarea")
+      textArea.value = text
+      textArea.style.position = "fixed"
+      textArea.style.left = "-999999px"
+      textArea.style.top = "-999999px"
+      textArea.setAttribute("readonly", "")
+      textArea.style.opacity = "0"
 
-      if (!response.ok) {
-        throw new Error("Failed to get download URL")
+      document.body.appendChild(textArea)
+
+      // For iOS, we need to set contentEditable and focus
+      if (/iP(ad|hone|od)/.test(navigator.userAgent)) {
+        textArea.contentEditable = "true"
+        textArea.readOnly = false
+        const range = document.createRange()
+        range.selectNodeContents(textArea)
+        const selection = window.getSelection()
+        selection?.removeAllRanges()
+        selection?.addRange(range)
+        textArea.setSelectionRange(0, 999999)
+      } else {
+        textArea.select()
       }
 
-      const data = await response.json()
+      const successful = document.execCommand("copy")
+      document.body.removeChild(textArea)
 
-      // Create a temporary anchor element and trigger download
-      const link = document.createElement("a")
-      link.href = data.download_url
-      link.download = fileName
-      link.style.display = "none"
-
-      // Add to DOM, click, and remove
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-
-      toast({
-        title: "Success",
-        description: "File download started",
-      })
-    } catch (error) {
-      console.error("Download error:", error)
-      toast({
-        title: "Error",
-        description: "Failed to download file",
-        variant: "destructive",
-      })
-    } finally {
-      setIsLoading(false)
+      return successful
+    } catch (err) {
+      console.error("Fallback clipboard method failed:", err)
+      return false
     }
   }
 
-  const handleDelete = async (fileId: string) => {
+  const handleDownload = useCallback(
+    async (fileId: string, fileName: string) => {
+      try {
+        const token = localStorage.getItem("token")
+        if (!token) {
+          clearAuthAndRedirect()
+          return
+        }
+
+        const apiUrl = getApiUrl()
+        const response = await fetch(`${apiUrl}/file/${fileId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        })
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            clearAuthAndRedirect()
+            return
+          }
+          throw new Error("Failed to get download URL")
+        }
+
+        const data = await response.json()
+
+        // Create a temporary anchor element and trigger download
+        const link = document.createElement("a")
+        link.href = data.download_url
+        link.download = fileName
+        link.style.display = "none"
+
+        // Add to DOM, click, and remove
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+
+        toast({
+          title: "Download started",
+          description: `Downloading ${fileName}`,
+        })
+      } catch (error) {
+        console.error("Download error:", error)
+        toast({
+          title: "Download failed",
+          description: "Failed to download file. Please try again.",
+          variant: "destructive",
+        })
+      }
+    },
+    [clearAuthAndRedirect],
+  )
+
+  const handleRename = useCallback(async () => {
+    if (!renameDialog.file || !renameDialog.newName.trim()) return
+
     try {
-      setIsLoading(true)
-      const response = await fetch(`/file/${fileId}`, {
+      const token = localStorage.getItem("token")
+      if (!token) {
+        clearAuthAndRedirect()
+        return
+      }
+
+      const apiUrl = getApiUrl()
+      const response = await fetch(`${apiUrl}/file/${renameDialog.file.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          new_name: renameDialog.newName.trim(),
+        }),
+      })
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          clearAuthAndRedirect()
+          return
+        }
+        throw new Error("Failed to rename file")
+      }
+
+      toast({
+        title: "File renamed",
+        description: `File renamed to ${renameDialog.newName}`,
+      })
+
+      setRenameDialog({ open: false, file: null, newName: "" })
+      fetchVaultData(token)
+    } catch (error) {
+      console.error("Rename error:", error)
+      toast({
+        title: "Rename failed",
+        description: "Failed to rename file. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }, [renameDialog, fetchVaultData, clearAuthAndRedirect])
+
+  const handleDelete = useCallback(async () => {
+    if (!deleteDialog.file) return
+
+    try {
+      const token = localStorage.getItem("token")
+      if (!token) {
+        clearAuthAndRedirect()
+        return
+      }
+
+      const apiUrl = getApiUrl()
+      const response = await fetch(`${apiUrl}/file/${deleteDialog.file.id}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -68,179 +227,225 @@ export function useFileOperations(token: string) {
       })
 
       if (!response.ok) {
+        if (response.status === 401) {
+          clearAuthAndRedirect()
+          return
+        }
         throw new Error("Failed to delete file")
       }
 
       toast({
-        title: "Success",
-        description: "File deleted successfully",
+        title: "File deleted",
+        description: `${deleteDialog.file.file} has been deleted`,
       })
+
+      setDeleteDialog({ open: false, file: null })
+      fetchVaultData(token)
     } catch (error) {
       console.error("Delete error:", error)
       toast({
-        title: "Error",
-        description: "Failed to delete file",
+        title: "Delete failed",
+        description: "Failed to delete file. Please try again.",
         variant: "destructive",
       })
-    } finally {
-      setIsLoading(false)
     }
-  }
+  }, [deleteDialog, fetchVaultData, clearAuthAndRedirect])
 
-  const handleRename = async (fileId: string, newName: string) => {
+  const handleBulkDelete = useCallback((fileIds: string[], fileNames: string[]) => {
+    setBulkDeleteDialog({
+      open: true,
+      fileIds,
+      fileNames,
+    })
+  }, [])
+
+  const handleBulkDeleteConfirm = useCallback(async () => {
+    if (bulkDeleteDialog.fileIds.length === 0) return
+
     try {
-      setIsLoading(true)
-      const response = await fetch(`/file/${fileId}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ new_name: newName }),
-      })
-
-      if (!response.ok) {
-        throw new Error("Failed to rename file")
+      const token = localStorage.getItem("token")
+      if (!token) {
+        clearAuthAndRedirect()
+        return
       }
 
-      toast({
-        title: "Success",
-        description: "File renamed successfully",
-      })
-    } catch (error) {
-      console.error("Rename error:", error)
-      toast({
-        title: "Error",
-        description: "Failed to rename file",
-        variant: "destructive",
-      })
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleVisibilityChange = async (fileId: string, visibility: "public" | "private") => {
-    try {
-      setIsLoading(true)
-      const response = await fetch(`/file/${fileId}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ visibility }),
-      })
-
-      if (!response.ok) {
-        throw new Error("Failed to update file visibility")
-      }
-
-      toast({
-        title: "Success",
-        description: `File is now ${visibility}`,
-      })
-    } catch (error) {
-      console.error("Visibility change error:", error)
-      toast({
-        title: "Error",
-        description: "Failed to update file visibility",
-        variant: "destructive",
-      })
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleBulkDelete = async (fileIds: string[]) => {
-    try {
-      setIsLoading(true)
-      const response = await fetch("/file/bulk-delete", {
+      const apiUrl = getApiUrl()
+      const response = await fetch(`${apiUrl}/file/bulk-delete`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ file_ids: fileIds }),
+        body: JSON.stringify({
+          file_ids: bulkDeleteDialog.fileIds,
+        }),
       })
 
       if (!response.ok) {
+        if (response.status === 401) {
+          clearAuthAndRedirect()
+          return
+        }
         throw new Error("Failed to delete files")
       }
 
-      const data = await response.json()
+      const result = await response.json()
 
-      // Notify about deleted files
-      data.deleted_files.file_ids.forEach((fileId: string) => {
-        toast({
-          title: "Success",
-          description: `File ${fileId} deleted successfully`,
-        })
+      toast({
+        title: "Files deleted",
+        description: `${result.deleted_files.count} file(s) deleted successfully`,
       })
 
-      if (data.files_not_found.count > 0) {
-        toast({
-          title: "Warning",
-          description: `${data.files_not_found.count} file(s) were not found`,
-          variant: "destructive",
-        })
+      setBulkDeleteDialog({ open: false, fileIds: [], fileNames: [] })
+      
+      // Clear selection mode after successful bulk delete
+      if (clearSelectionMode) {
+        clearSelectionMode()
       }
-
-      setIsLoading(false)
-      return data
+      
+      fetchVaultData(token)
     } catch (error) {
-      setIsLoading(false)
+      console.error("Bulk delete error:", error)
       toast({
-        title: "Error",
-        description: "Failed to delete files",
+        title: "Delete failed",
+        description: "Failed to delete files. Please try again.",
         variant: "destructive",
       })
-      console.error("Bulk delete error:", error)
-      return null
     }
-  }
+  }, [bulkDeleteDialog, fetchVaultData, clearAuthAndRedirect, clearSelectionMode])
 
-  const handleUpdateFile = async (
-    fileId: string,
-    updates: { new_name?: string; visibility?: "public" | "private" },
-  ) => {
+  const handleVisibilityChange = useCallback(async () => {
+    if (!visibilityDialog.file || !visibilityDialog.visibility) return
+
     try {
-      setIsLoading(true)
-      const response = await fetch(`/file/${fileId}`, {
+      const token = localStorage.getItem("token")
+      if (!token) {
+        clearAuthAndRedirect()
+        return
+      }
+
+      const apiUrl = getApiUrl()
+      const response = await fetch(`${apiUrl}/file/${visibilityDialog.file.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(updates),
+        body: JSON.stringify({
+          visibility: visibilityDialog.visibility,
+        }),
       })
 
       if (!response.ok) {
-        throw new Error("Failed to update file")
+        if (response.status === 401) {
+          clearAuthAndRedirect()
+          return
+        }
+        throw new Error("Failed to change visibility")
       }
 
       toast({
-        title: "Success",
-        description: "File updated successfully",
+        title: "Visibility changed",
+        description: `File visibility changed to ${visibilityDialog.visibility}`,
       })
+
+      setVisibilityDialog({ open: false, file: null, visibility: "" })
+      fetchVaultData(token)
     } catch (error) {
-      console.error("Update error:", error)
+      console.error("Visibility change error:", error)
       toast({
-        title: "Error",
-        description: "Failed to update file",
+        title: "Visibility change failed",
+        description: "Failed to change file visibility. Please try again.",
         variant: "destructive",
       })
-    } finally {
-      setIsLoading(false)
     }
-  }
+  }, [visibilityDialog, fetchVaultData, clearAuthAndRedirect])
+
+  const handleCopyPublicLink = useCallback(
+    async (file: FileData, vaultName: string) => {
+      try {
+        const token = localStorage.getItem("token")
+        if (!token) {
+          clearAuthAndRedirect()
+          return
+        }
+
+        // First, make the file public if it's not already
+        if (file.visibility !== "public") {
+          const apiUrl = getApiUrl()
+          const response = await fetch(`${apiUrl}/file/${file.id}`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              visibility: "public",
+            }),
+          })
+
+          if (!response.ok) {
+            if (response.status === 401) {
+              clearAuthAndRedirect()
+              return
+            }
+            throw new Error("Failed to make file public")
+          }
+
+          // Refresh vault data to update the UI
+          fetchVaultData(token)
+        }
+
+        // Generate the correct public URL format
+        const apiUrl = getApiUrl()
+        const publicUrl = `${apiUrl}/${vaultName}/file/${file.id}`
+
+        // Copy to clipboard using iOS-compatible method
+        const success = await copyToClipboard(publicUrl)
+
+        if (success) {
+          toast({
+            title: "Public link copied",
+            description:
+              file.visibility !== "public"
+                ? "File made public and link copied to clipboard"
+                : "Public link copied to clipboard",
+          })
+        } else {
+          // If copying fails, show the URL in a toast for manual copying
+          toast({
+            title: "Copy failed",
+            description: `Please copy manually: ${publicUrl}`,
+            variant: "destructive",
+          })
+        }
+      } catch (error) {
+        console.error("Copy public link error:", error)
+        toast({
+          title: "Copy link failed",
+          description: "Failed to copy public link. Please try again.",
+          variant: "destructive",
+        })
+      }
+    },
+    [clearAuthAndRedirect, fetchVaultData],
+  )
 
   return {
+    renameDialog,
+    deleteDialog,
+    bulkDeleteDialog,
+    visibilityDialog,
     handleDownload,
-    handleDelete,
     handleRename,
-    handleVisibilityChange,
+    handleDelete,
     handleBulkDelete,
-    handleUpdateFile,
-    isLoading,
+    handleBulkDeleteConfirm,
+    handleVisibilityChange,
+    handleCopyPublicLink,
+    setRenameDialog,
+    setDeleteDialog,
+    setBulkDeleteDialog,
+    setVisibilityDialog,
   }
 }

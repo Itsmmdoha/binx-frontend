@@ -36,6 +36,7 @@ interface FilesListProps {
   selectedFiles: Set<string>
   searchQuery: string
   sortOption: SortOption
+  vaultName: string
   onSearchChange: (query: string) => void
   onSortChange: (option: SortOption) => void
   onFileSelect: (fileId: string) => void
@@ -44,7 +45,7 @@ interface FilesListProps {
   onRename: (file: FileData) => void
   onDelete: (file: FileData) => void
   onVisibilityChange: (file: FileData, visibility: string) => void
-  onCopyPublicLink: (file: FileData) => void
+  onCopyPublicLink: (file: FileData, vaultName: string) => void
 }
 
 export function FilesList({
@@ -54,6 +55,7 @@ export function FilesList({
   selectedFiles,
   searchQuery,
   sortOption,
+  vaultName,
   onSearchChange,
   onSortChange,
   onFileSelect,
@@ -313,7 +315,7 @@ export function FilesList({
                             )}
                           </DropdownMenuItem>
                           <DropdownMenuItem
-                            onClick={() => onCopyPublicLink(file)}
+                            onClick={() => onCopyPublicLink(file, vaultName)}
                             className="cursor-pointer dark:text-gray-300 dark:hover:bg-gray-700"
                           >
                             <Link className="w-4 h-4 mr-2" />
