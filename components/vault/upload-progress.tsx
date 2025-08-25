@@ -124,18 +124,17 @@ export function UploadProgress({
             <div className="flex items-center space-x-2">
               {(hasActiveUploads || hasPausedUploads) && (
                 <>
-                  {hasActiveUploads && onPause && (
-                    <Button variant="outline" size="sm" onClick={() => onPause()} className="h-8 px-3 text-xs">
-                      <Pause className="w-3 h-3 mr-1" />
-                      Pause
-                    </Button>
-                  )}
-                  {hasPausedUploads && onResume && (
+                  {hasPausedUploads && onResume ? (
                     <Button variant="outline" size="sm" onClick={() => onResume()} className="h-8 px-3 text-xs">
                       <Play className="w-3 h-3 mr-1" />
                       Resume
                     </Button>
-                  )}
+                  ) : hasActiveUploads && onPause ? (
+                    <Button variant="outline" size="sm" onClick={() => onPause()} className="h-8 px-3 text-xs">
+                      <Pause className="w-3 h-3 mr-1" />
+                      Pause
+                    </Button>
+                  ) : null}
                 </>
               )}
             </div>
@@ -240,18 +239,17 @@ export function UploadProgress({
                 {uploadSummary.completed} completed, {uploadSummary.failed} failed
               </span>
               <div className="flex items-center space-x-2">
-                {hasActiveUploads && onPause && (
-                  <Button variant="outline" size="sm" onClick={() => onPause()} className="h-8 px-3 text-xs">
-                    <Pause className="w-3 h-3 mr-1" />
-                    Pause
-                  </Button>
-                )}
-                {hasPausedUploads && onResume && (
+                {hasPausedUploads && onResume ? (
                   <Button variant="outline" size="sm" onClick={() => onResume()} className="h-8 px-3 text-xs">
                     <Play className="w-3 h-3 mr-1" />
                     Resume
                   </Button>
-                )}
+                ) : hasActiveUploads && onPause ? (
+                  <Button variant="outline" size="sm" onClick={() => onPause()} className="h-8 px-3 text-xs">
+                    <Pause className="w-3 h-3 mr-1" />
+                    Pause
+                  </Button>
+                ) : null}
               </div>
             </div>
           </div>

@@ -41,6 +41,7 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
   const [currentUploadIndex, setCurrentUploadIndex] = useState(-1)
   const [uploadCancelled, setUploadCancelled] = useState(false)
   const [showDetailedProgress, setShowDetailedProgress] = useState(false)
+  const [batchPaused, setBatchPaused] = useState(false) // Added batch pause state to control sequential upload flow
   const activeUploadsRef = useRef<Map<string, { abort: () => void; pause: () => void; resume: () => void }>>(new Map())
 
   const checkStorageCapacity = useCallback(
@@ -372,6 +373,32 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
           break
         }
 
+        while (batchPaused && !uploadCancelled) {
+          // Mark pending files as paused
+          setUploadQueue((prev) =>
+            prev.map((item) => {
+              const itemIndex = prev.findIndex((prevItem) => prevItem.file === item.file)
+              const currentIndex = prev.findIndex((prevItem) => prevItem.file === fileInfos[i].file)
+              return itemIndex >= currentIndex && item.status === "pending"
+                ? { ...item, status: "paused" as const }
+                : item
+            }),
+          )
+          await new Promise((resolve) => setTimeout(resolve, 1000))
+        }
+
+        if (!batchPaused && !uploadCancelled) {
+          setUploadQueue((prev) =>
+            prev.map((item) =>
+              item.file === fileInfos[i].file && item.status === "paused"
+                ? { ...item, status: "pending" as const }
+                : item,
+            ),
+          )
+        }
+
+        if (uploadCancelled) break
+
         setCurrentUploadIndex(i)
 
         setUploadQueue((prev) =>
@@ -429,10 +456,11 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
           setCurrentUploadIndex(-1)
           setUploadCancelled(false)
           setShowDetailedProgress(false)
+          setBatchPaused(false)
         }, 1500) // Reduced from 5000ms to 1500ms
       }
     },
-    [uploadCancelled, uploadFileWithProgress, uploadFileWithMultipart, fetchVaultData, uploadQueue],
+    [uploadCancelled, uploadFileWithProgress, uploadFileWithMultipart, fetchVaultData, uploadQueue, batchPaused],
   )
 
   const handleFileUpload = useCallback(
@@ -483,17 +511,26 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
 
   const cancelUpload = useCallback(() => {
     setUploadCancelled(true)
+    setBatchPaused(false)
 
     // Cancel all active multipart uploads
     activeUploadsRef.current.forEach((controls, uploadId) => {
-      controls.abort()
+      try {
+        controls.abort()
+      } catch (error) {
+        console.error(`Failed to abort upload ${uploadId}:`, error)
+      }
     })
     activeUploadsRef.current.clear()
 
     setUploadQueue((prev) =>
       prev.map((item) => {
         if ((item.status === "pending" || item.status === "uploading") && item.xhr) {
-          item.xhr.abort()
+          try {
+            item.xhr.abort()
+          } catch (error) {
+            console.error(`Failed to abort XHR for ${item.file.name}:`, error)
+          }
         }
         return item.status === "pending" || item.status === "uploading"
           ? { ...item, status: "cancelled" as const, error: "Upload cancelled by user" }
@@ -507,17 +544,25 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
       setCurrentUploadIndex(-1)
       setUploadCancelled(false)
       setShowDetailedProgress(false)
-    }, 1000) // Reduced from 2000ms to 1000ms
+    }, 1000)
   }, [])
 
   const cancelSingleUpload = useCallback((fileInfo: FileUploadInfo) => {
     if (fileInfo.multipartUpload) {
       const controls = activeUploadsRef.current.get(fileInfo.multipartUpload.id)
       if (controls) {
-        controls.abort()
+        try {
+          controls.abort()
+        } catch (error) {
+          console.error(`Failed to abort multipart upload for ${fileInfo.file.name}:`, error)
+        }
       }
     } else if (fileInfo.xhr) {
-      fileInfo.xhr.abort()
+      try {
+        fileInfo.xhr.abort()
+      } catch (error) {
+        console.error(`Failed to abort XHR for ${fileInfo.file.name}:`, error)
+      }
     }
 
     setUploadQueue((prev) =>
@@ -536,18 +581,26 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
         controls.pause()
       }
     } else {
-      // Pause all active uploads
+      // Pause all active multipart uploads
       activeUploadsRef.current.forEach((controls) => {
         controls.pause()
       })
+
+      // Set batch pause to prevent new uploads from starting
+      setBatchPaused(true)
     }
 
     setUploadQueue((prev) =>
-      prev.map((item) =>
-        item.multipartUpload && (!uploadId || item.multipartUpload.id === uploadId)
-          ? { ...item, status: "paused" as const }
-          : item,
-      ),
+      prev.map((item) => {
+        if (item.multipartUpload && (!uploadId || item.multipartUpload.id === uploadId)) {
+          return { ...item, status: "paused" as const }
+        }
+        // For batch pause, mark pending files as paused
+        if (!uploadId && item.status === "pending") {
+          return { ...item, status: "paused" as const }
+        }
+        return item
+      }),
     )
   }, [])
 
@@ -558,18 +611,26 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
         controls.resume()
       }
     } else {
-      // Resume all paused uploads
+      // Resume all paused multipart uploads
       activeUploadsRef.current.forEach((controls) => {
         controls.resume()
       })
+
+      // Clear batch pause to allow new uploads to start
+      setBatchPaused(false)
     }
 
     setUploadQueue((prev) =>
-      prev.map((item) =>
-        item.status === "paused" && (!uploadId || item.multipartUpload?.id === uploadId)
-          ? { ...item, status: "uploading" as const }
-          : item,
-      ),
+      prev.map((item) => {
+        if (item.status === "paused" && (!uploadId || item.multipartUpload?.id === uploadId)) {
+          // If it's a multipart upload, resume to uploading, otherwise back to pending
+          return {
+            ...item,
+            status: item.multipartUpload ? ("uploading" as const) : ("pending" as const),
+          }
+        }
+        return item
+      }),
     )
   }, [])
 
@@ -733,7 +794,6 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
           await completeMultipartUpload(updatedUpload.uploadId, token)
 
           // Mark as completed and cleanup
-          updatedUpload.status = "completed"
           removeIncompleteUpload(updatedUpload.id)
           removeRunningUpload(updatedUpload.uploadId)
 
@@ -741,20 +801,6 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
 
           // Refresh vault data
           fetchVaultData(token)
-
-          toast({
-            title: "Upload completed",
-            description: `${selectedFile.name} uploaded successfully`,
-          })
-
-          // Clean up after brief success display
-          setTimeout(() => {
-            setIsUploading(false)
-            setUploadQueue([])
-            setCurrentUploadIndex(-1)
-            setUploadCancelled(false)
-            setShowDetailedProgress(false)
-          }, 1500)
         }
 
         activeUploadsRef.current.delete(updatedUpload.id)
