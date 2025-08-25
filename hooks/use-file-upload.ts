@@ -42,6 +42,7 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
   const [uploadCancelled, setUploadCancelled] = useState(false)
   const [showDetailedProgress, setShowDetailedProgress] = useState(false)
   const [batchPaused, setBatchPaused] = useState(false) // Added batch pause state to control sequential upload flow
+  const batchPausedRef = useRef(false) // Ref to access current pause state in running async functions
   const activeUploadsRef = useRef<Map<string, { abort: () => void; pause: () => void; resume: () => void }>>(new Map())
 
   const checkStorageCapacity = useCallback(
@@ -373,7 +374,7 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
           break
         }
 
-        while (batchPaused && !uploadCancelled) {
+        while (batchPausedRef.current && !uploadCancelled) {
           // Mark pending files as paused
           setUploadQueue((prev) =>
             prev.map((item) => {
@@ -387,7 +388,7 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
           await new Promise((resolve) => setTimeout(resolve, 1000))
         }
 
-        if (!batchPaused && !uploadCancelled) {
+        if (!batchPausedRef.current && !uploadCancelled) {
           setUploadQueue((prev) =>
             prev.map((item) =>
               item.file === fileInfos[i].file && item.status === "paused"
@@ -457,10 +458,11 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
           setUploadCancelled(false)
           setShowDetailedProgress(false)
           setBatchPaused(false)
+          batchPausedRef.current = false
         }, 1500) // Reduced from 5000ms to 1500ms
       }
     },
-    [uploadCancelled, uploadFileWithProgress, uploadFileWithMultipart, fetchVaultData, uploadQueue, batchPaused],
+    [uploadCancelled, uploadFileWithProgress, uploadFileWithMultipart, fetchVaultData, uploadQueue],
   )
 
   const handleFileUpload = useCallback(
@@ -512,6 +514,7 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
   const cancelUpload = useCallback(() => {
     setUploadCancelled(true)
     setBatchPaused(false)
+    batchPausedRef.current = false
 
     // Cancel all active multipart uploads
     activeUploadsRef.current.forEach((controls, uploadId) => {
@@ -588,6 +591,7 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
 
       // Set batch pause to prevent new uploads from starting
       setBatchPaused(true)
+      batchPausedRef.current = true
     }
 
     setUploadQueue((prev) =>
@@ -597,6 +601,11 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
         }
         // For batch pause, mark pending files as paused
         if (!uploadId && item.status === "pending") {
+          return { ...item, status: "paused" as const }
+        }
+        // For single-part uploads that are currently uploading, show as paused
+        // (they will complete but the UI reflects the pause intent)
+        if (!uploadId && item.status === "uploading" && !item.multipartUpload) {
           return { ...item, status: "paused" as const }
         }
         return item
@@ -618,6 +627,7 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
 
       // Clear batch pause to allow new uploads to start
       setBatchPaused(false)
+      batchPausedRef.current = false
     }
 
     setUploadQueue((prev) =>
