@@ -41,7 +41,9 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
   const [currentUploadIndex, setCurrentUploadIndex] = useState(-1)
   const [uploadCancelled, setUploadCancelled] = useState(false)
   const [showDetailedProgress, setShowDetailedProgress] = useState(false)
+  const [batchPaused, setBatchPaused] = useState(false)
   const activeUploadsRef = useRef<Map<string, { abort: () => void; pause: () => void; resume: () => void }>>(new Map())
+  const batchPauseResolveRef = useRef<(() => void) | null>(null)
 
   const checkStorageCapacity = useCallback(
     (filesToUpload: File[]): { canUpload: boolean; exceedsStorage: File[] } => {
@@ -372,6 +374,16 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
           break
         }
 
+        // Wait if batch is paused
+        while (batchPaused && !uploadCancelled) {
+          await new Promise((resolve) => {
+            batchPauseResolveRef.current = resolve
+            setTimeout(resolve, 1000) // Check every second
+          })
+        }
+
+        if (uploadCancelled) break
+
         setCurrentUploadIndex(i)
 
         setUploadQueue((prev) =>
@@ -429,10 +441,11 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
           setCurrentUploadIndex(-1)
           setUploadCancelled(false)
           setShowDetailedProgress(false)
+          setBatchPaused(false)
         }, 1500) // Reduced from 5000ms to 1500ms
       }
     },
-    [uploadCancelled, uploadFileWithProgress, uploadFileWithMultipart, fetchVaultData, uploadQueue],
+    [uploadCancelled, uploadFileWithProgress, uploadFileWithMultipart, fetchVaultData, uploadQueue, batchPaused],
   )
 
   const handleFileUpload = useCallback(
@@ -462,12 +475,14 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
       setIsUploading(true)
       setUploadCancelled(false)
       setShowDetailedProgress(false)
+      setBatchPaused(false)
 
       if (!canUpload || fileInfos.every((f) => f.status === "size-exceeded")) {
         setTimeout(() => {
           setIsUploading(false)
           setUploadQueue([])
           setCurrentUploadIndex(-1)
+          setBatchPaused(false)
         }, 3000) // Reduced from 5000ms to 3000ms for size exceeded cases
         event.target.value = ""
         return
@@ -483,12 +498,19 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
 
   const cancelUpload = useCallback(() => {
     setUploadCancelled(true)
+    setBatchPaused(false)
 
     // Cancel all active multipart uploads
     activeUploadsRef.current.forEach((controls, uploadId) => {
       controls.abort()
     })
     activeUploadsRef.current.clear()
+
+    // Resume any waiting batch pause
+    if (batchPauseResolveRef.current) {
+      batchPauseResolveRef.current()
+      batchPauseResolveRef.current = null
+    }
 
     setUploadQueue((prev) =>
       prev.map((item) => {
@@ -536,18 +558,26 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
         controls.pause()
       }
     } else {
-      // Pause all active uploads
+      // Pause all active multipart uploads
       activeUploadsRef.current.forEach((controls) => {
         controls.pause()
       })
+      // Also pause batch processing
+      setBatchPaused(true)
     }
 
     setUploadQueue((prev) =>
-      prev.map((item) =>
-        item.multipartUpload && (!uploadId || item.multipartUpload.id === uploadId)
-          ? { ...item, status: "paused" as const }
-          : item,
-      ),
+      prev.map((item) => {
+        // Pause multipart uploads
+        if (item.multipartUpload && (!uploadId || item.multipartUpload.id === uploadId)) {
+          return { ...item, status: "paused" as const }
+        }
+        // For single-part uploads that are pending, mark them as paused (they'll wait before starting)
+        if (!uploadId && !item.multipartUpload && item.status === "pending") {
+          return { ...item, status: "paused" as const }
+        }
+        return item
+      }),
     )
   }, [])
 
@@ -558,18 +588,26 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
         controls.resume()
       }
     } else {
-      // Resume all paused uploads
+      // Resume all paused multipart uploads
       activeUploadsRef.current.forEach((controls) => {
         controls.resume()
       })
+      // Resume batch processing
+      setBatchPaused(false)
+      if (batchPauseResolveRef.current) {
+        batchPauseResolveRef.current()
+        batchPauseResolveRef.current = null
+      }
     }
 
     setUploadQueue((prev) =>
-      prev.map((item) =>
-        item.status === "paused" && (!uploadId || item.multipartUpload?.id === uploadId)
-          ? { ...item, status: "uploading" as const }
-          : item,
-      ),
+      prev.map((item) => {
+        // Resume multipart uploads
+        if (item.status === "paused" && (!uploadId || item.multipartUpload?.id === uploadId)) {
+          return { ...item, status: item.multipartUpload ? "uploading" as const : "pending" as const }
+        }
+        return item
+      }),
     )
   }, [])
 
@@ -634,6 +672,7 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
         setIsUploading(true)
         setUploadCancelled(false)
         setShowDetailedProgress(false)
+        setBatchPaused(false)
 
         // Add to running uploads
         addRunningUpload(updatedUpload.uploadId)
@@ -754,6 +793,7 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
             setCurrentUploadIndex(-1)
             setUploadCancelled(false)
             setShowDetailedProgress(false)
+            setBatchPaused(false)
           }, 1500)
         }
 
@@ -772,6 +812,7 @@ export function useFileUpload(vaultData: VaultData | null, fetchVaultData: (toke
         setTimeout(() => {
           setIsUploading(false)
           setUploadQueue([])
+          setBatchPaused(false)
         }, 3000)
       }
     },
