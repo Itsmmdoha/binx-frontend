@@ -4,6 +4,13 @@ A Next.js frontend for [binx](https://github.com/itsmmdoha/binx), built with Typ
 
 ![image](https://github.com/user-attachments/assets/4c0535a8-6abb-4f27-9abe-8ef136c08e2e)
 
+### ⚠️ Disclaimer
+
+> This frontend was built with **heavy assistance from AI**.
+> I’m primarily a **backend-focused developer** and don’t have deep experience in **UI/UX design or Next.js**.
+>
+> The goal of this project is functionality and learning rather than polished design.
+> Contributions, improvements, and suggestions are very welcome.
 
 
 ## Prerequisites
